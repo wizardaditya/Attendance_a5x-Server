@@ -19,10 +19,13 @@ import announcementRoutes from './routes/announcements.js';
 const app = express();
 const httpServer = createServer(app);
 
+// Trust Render/Vercel reverse proxy - required for rate limiting & IP detection
+app.set('trust proxy', 1);
+
 const RAW_ORIGINS = process.env.CLIENT_URL || 'http://localhost:5173';
 const STATIC_ORIGINS = [
-  ...RAW_ORIGINS.split(',').map(o => o.trim()),
-  'https://attendance-a5x-client.vercel.app/',
+  ...RAW_ORIGINS.split(',').map(o => o.trim().replace(/\/$/, '')), // strip trailing slash
+  'https://attendance-a5x-client.vercel.app',
   'http://localhost:5173',
 ];
 

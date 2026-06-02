@@ -30,23 +30,42 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 router.post('/', authMiddleware, adminOnly, async (req, res) => {
-  const { name, email, phone, department, designation, role } = req.body;
-  if (!name || !email || !phone || !department)
-    return res.status(400).json({ error: 'Name, email, phone, department required' });
-  if (await User.findOne({ email: email.toLowerCase() }))
-    return res.status(409).json({ error: 'Email already exists' });
-  const empCount = await User.countDocuments({ role: 'EMPLOYEE' });
-  const user = await User.create({
-    name, email, phone,
-    password:    await bcrypt.hash('Welcome@123', 10),
-    role:        role || 'EMPLOYEE',
-    department,
-    designation: designation || 'Employee',
-    employeeId:  `A5X-${String(empCount + 2).padStart(3, '0')}`,
-    isActive:    true,
-  });
-  const { password: _, ...safeUser } = user.toObject();
-  res.status(201).json(safeUser);
+  try {
+    const { name, email, phone, department, designation, role } = req.body;
+    if (!name || !email || !phone || !department)
+      return res.status(400).json({ error: 'Name, email, phone, department required' });
+    if (await User.findOne({ email: email.toLowerCase() }))
+      return res.status(409).json({ error: 'Email already exists' });
+
+    // Generate unique employeeId with collision retry
+    let employeeId, attempts = 0;
+    while (attempts < 10) {
+      const empCount = await User.countDocuments();
+      employeeId = `A5X-${String(empCount + 1 + attempts).padStart(3, '0')}`;
+      const exists = await User.findOne({ employeeId });
+      if (!exists) break;
+      attempts++;
+    }
+
+    const user = await User.create({
+      name, email: email.toLowerCase(), phone,
+      password:    await bcrypt.hash('Welcome@123', 10),
+      role:        role || 'EMPLOYEE',
+      department,
+      designation: designation || 'Employee',
+      employeeId,
+      isActive:    true,
+    });
+    const { password: _, ...safeUser } = user.toObject();
+    res.status(201).json(safeUser);
+  } catch (err) {
+    if (err.code === 11000) {
+      const field = Object.keys(err.keyPattern)[0];
+      return res.status(409).json({ error: `${field} already exists` });
+    }
+    console.error('Create user error:', err.message);
+    res.status(500).json({ error: 'Failed to create user' });
+  }
 });
 
 router.patch('/:id', authMiddleware, async (req, res) => {
