@@ -1,164 +1,137 @@
 import express from 'express';
-import { db, generateId } from '../db.js';
+import Task from '../models/Task.js';
+import User from '../models/User.js';
+import { departments } from '../db.js';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// GET /api/tasks — list tasks
-// Admin: can filter by department, assignedTo, status, priority
-// Employee: only sees tasks assigned to them
-router.get('/', authMiddleware, (req, res) => {
-  let tasks = [...db.tasks];
-
+router.get('/', authMiddleware, async (req, res) => {
+  const filter = {};
   if (req.user.role === 'EMPLOYEE') {
-    tasks = tasks.filter(t => t.assignedTo.includes(req.user.id));
+    filter.assignedTo = req.user._id;
   } else {
-    // Admin filters
     const { department, assignedTo, status, priority } = req.query;
-    if (department) tasks = tasks.filter(t => t.department === department);
-    if (assignedTo) tasks = tasks.filter(t => t.assignedTo.includes(assignedTo));
-    if (status) tasks = tasks.filter(t => t.status === status);
-    if (priority) tasks = tasks.filter(t => t.priority === priority);
+    if (department) filter.department = department;
+    if (assignedTo) filter.assignedTo = assignedTo;
+    if (status)     filter.status = status;
+    if (priority)   filter.priority = priority;
   }
+  const tasks = await Task.find(filter)
+    .populate('assignedTo', 'name department')
+    .sort({ createdAt: -1 });
 
-  // Enrich with assignee names
   const enriched = tasks.map(t => ({
-    ...t,
-    assignees: t.assignedTo.map(id => {
-      const u = db.users.find(u => u.id === id);
-      return u ? { id: u.id, name: u.name, department: u.department } : null;
-    }).filter(Boolean),
+    ...t.toObject(),
+    assignees: t.assignedTo.map(u => ({ id: u._id, name: u.name, department: u.department })),
   }));
-
-  res.json(enriched.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+  res.json(enriched);
 });
 
-// GET /api/tasks/stats — admin analytics
-router.get('/stats', authMiddleware, adminOnly, (req, res) => {
-  const { department } = req.query;
-  let tasks = [...db.tasks];
-  if (department) tasks = tasks.filter(t => t.department === department);
+router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
+  const filter = {};
+  if (req.query.department) filter.department = req.query.department;
+  const tasks = await Task.find(filter);
 
   const byStatus = {}, byPriority = {}, byDepartment = {};
   tasks.forEach(t => {
-    byStatus[t.status] = (byStatus[t.status] || 0) + 1;
-    byPriority[t.priority] = (byPriority[t.priority] || 0) + 1;
+    byStatus[t.status]         = (byStatus[t.status] || 0) + 1;
+    byPriority[t.priority]     = (byPriority[t.priority] || 0) + 1;
     byDepartment[t.department] = (byDepartment[t.department] || 0) + 1;
   });
   const overdue = tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'DONE').length;
   res.json({ total: tasks.length, byStatus, byPriority, byDepartment, overdue });
 });
 
-// GET /api/tasks/today — employee's tasks for today
-router.get('/today', authMiddleware, (req, res) => {
+router.get('/today', authMiddleware, async (req, res) => {
   const today = new Date().toISOString().split('T')[0];
-  const tasks = db.tasks.filter(t => {
-    const assigned = t.assignedTo.includes(req.user.id);
-    const dueToday = t.dueDate && t.dueDate.toString().startsWith(today);
-    return assigned && (dueToday || t.status !== 'DONE');
+  const tasks = await Task.find({
+    assignedTo: req.user._id,
+    $or: [
+      { dueDate: { $gte: new Date(today), $lt: new Date(today + 'T23:59:59') } },
+      { status: { $ne: 'DONE' } },
+    ],
   });
   res.json(tasks);
 });
 
-// GET /api/tasks/department-summary — tasks grouped by department (admin)
-router.get('/department-summary', authMiddleware, adminOnly, (req, res) => {
+router.get('/department-summary', authMiddleware, adminOnly, async (req, res) => {
   const summary = {};
-  db.departments.forEach(dept => {
-    const deptTasks = db.tasks.filter(t => t.department === dept);
+  for (const dept of departments) {
+    const deptTasks = await Task.find({ department: dept });
     summary[dept] = {
-      total: deptTasks.length,
-      todo: deptTasks.filter(t => t.status === 'TODO').length,
+      total:      deptTasks.length,
+      todo:       deptTasks.filter(t => t.status === 'TODO').length,
       inProgress: deptTasks.filter(t => t.status === 'IN_PROGRESS').length,
-      done: deptTasks.filter(t => t.status === 'DONE').length,
-      overdue: deptTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'DONE').length,
+      done:       deptTasks.filter(t => t.status === 'DONE').length,
+      overdue:    deptTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'DONE').length,
     };
-  });
+  }
   res.json(summary);
 });
 
-// POST /api/tasks — create task
-// assignMode: 'department' (all members of a dept) | 'individuals' (specific user IDs)
 router.post('/', authMiddleware, async (req, res) => {
-  const {
-    title, description, priority, dueDate, estimatedDur,
-    tags, subtasks, recurrence,
-    assignMode,       // 'department' | 'individuals'
-    department,       // required for both modes
-    assignedTo,       // array of user IDs (for 'individuals' mode)
-  } = req.body;
-
-  if (!title) return res.status(400).json({ error: 'Title required' });
+  const { title, description, priority, dueDate, estimatedDur, tags, subtasks, recurrence, assignMode, department, assignedTo } = req.body;
+  if (!title)      return res.status(400).json({ error: 'Title required' });
   if (!department) return res.status(400).json({ error: 'Department required' });
 
   let finalAssignedTo = [];
-
   if (assignMode === 'department') {
-    // Assign to ALL active employees in the department
-    const deptMembers = db.users.filter(u => u.department === department && u.isActive && u.role === 'EMPLOYEE');
-    if (deptMembers.length === 0) return res.status(400).json({ error: `No active employees found in ${department} department` });
-    finalAssignedTo = deptMembers.map(u => u.id);
+    const members = await User.find({ department, isActive: true, role: 'EMPLOYEE' });
+    if (members.length === 0)
+      return res.status(400).json({ error: `No active employees in ${department}` });
+    finalAssignedTo = members.map(u => u._id);
   } else {
-    // Assign to specific individuals
-    if (!assignedTo || assignedTo.length === 0) return res.status(400).json({ error: 'Select at least one person to assign' });
+    if (!assignedTo || assignedTo.length === 0)
+      return res.status(400).json({ error: 'Select at least one person' });
     finalAssignedTo = assignedTo;
   }
 
-  const task = {
-    id: generateId(),
+  const task = await Task.create({
     title,
-    description: description || '',
-    status: 'TODO',
-    priority: priority || 'MEDIUM',
-    assignedTo: finalAssignedTo,
-    assignMode: assignMode || 'individuals',
+    description:  description || '',
+    priority:     priority || 'MEDIUM',
+    assignedTo:   finalAssignedTo,
+    assignMode:   assignMode || 'individuals',
     department,
-    createdBy: req.user.id,
-    dueDate: dueDate ? new Date(dueDate) : null,
+    createdBy:    req.user._id,
+    dueDate:      dueDate ? new Date(dueDate) : null,
     estimatedDur: estimatedDur || null,
-    actualDur: null,
-    tags: tags || [],
-    recurrence: recurrence || null,
-    subtasks: (subtasks || []).map(s => ({ id: generateId(), title: s, done: false })),
-    attachments: [],
-    comments: [],
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
+    tags:         tags || [],
+    recurrence:   recurrence || null,
+    subtasks:     (subtasks || []).map(s => ({ title: s, done: false })),
+  });
 
-  db.tasks.push(task);
   if (req.app.get('io')) req.app.get('io').emit('task:created', task);
   res.status(201).json(task);
 });
 
-// PATCH /api/tasks/:id — update task
-router.patch('/:id', authMiddleware, (req, res) => {
-  const task = db.tasks.find(t => t.id === req.params.id);
+router.patch('/:id', authMiddleware, async (req, res) => {
+  const task = await Task.findById(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  if (req.user.role === 'EMPLOYEE' && !task.assignedTo.includes(req.user.id)) {
+  if (req.user.role === 'EMPLOYEE' && !task.assignedTo.map(id => id.toString()).includes(req.user._id.toString()))
     return res.status(403).json({ error: 'Forbidden' });
-  }
+
   const allowed = ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedDur', 'actualDur', 'tags', 'subtasks', 'assignedTo', 'department'];
   allowed.forEach(k => { if (req.body[k] !== undefined) task[k] = req.body[k]; });
-  task.updatedAt = new Date();
+  await task.save();
+
   if (req.app.get('io')) req.app.get('io').emit('task:updated', task);
   res.json(task);
 });
 
-// DELETE /api/tasks/:id
-router.delete('/:id', authMiddleware, adminOnly, (req, res) => {
-  const idx = db.tasks.findIndex(t => t.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Task not found' });
-  db.tasks.splice(idx, 1);
+router.delete('/:id', authMiddleware, adminOnly, async (req, res) => {
+  const task = await Task.findByIdAndDelete(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
   res.json({ message: 'Deleted' });
 });
 
-// POST /api/tasks/:id/comment
-router.post('/:id/comment', authMiddleware, (req, res) => {
-  const task = db.tasks.find(t => t.id === req.params.id);
+router.post('/:id/comment', authMiddleware, async (req, res) => {
+  const task = await Task.findById(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  const comment = { id: generateId(), userId: req.user.id, userName: req.user.name, text: req.body.text, createdAt: new Date() };
-  task.comments.push(comment);
-  res.json(comment);
+  task.comments.push({ userId: req.user._id, userName: req.user.name, text: req.body.text });
+  await task.save();
+  res.json(task.comments[task.comments.length - 1]);
 });
 
 export default router;

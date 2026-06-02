@@ -1,36 +1,38 @@
-import { v4 as uuidv4 } from 'uuid';
+import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-const adminHash = bcrypt.hashSync('admin123', 10);
+export const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log('✅ MongoDB connected');
+    await seedAdmin();
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err.message);
+    process.exit(1);
+  }
+};
 
-// Only the admin account — no dummy employees
-export const db = {
-  users: [
-    {
-      id: 'admin-001',
-      name: 'A5X Admin',
-      email: 'admin@a5xindustries.com',
-      phone: '9999999999',
-      password: adminHash,
-      role: 'ADMIN',
-      department: 'Management',
+// Seed admin account on first run
+async function seedAdmin() {
+  const { default: User } = await import('./models/User.js');
+  const exists = await User.findOne({ email: 'admin@a5xindustries.com' });
+  if (!exists) {
+    await User.create({
+      name:        'A5X Admin',
+      email:       'admin@a5xindustries.com',
+      phone:       '9999999999',
+      password:    await bcrypt.hash('admin123', 10),
+      role:        'ADMIN',
+      department:  'Management',
       designation: 'System Administrator',
-      employeeId: 'A5X-001',
-      avatar: null,
-      joinedAt: new Date('2024-01-01'),
-      isActive: true,
-    },
-  ],
-  attendance: [],
-  qrCodes: [],
-  tasks: [],
-  announcements: [],
-  auditLog: [],
-  departments: ['Engineering', 'Sales', 'HR', 'Management', 'Operations', 'Finance', 'Marketing', 'Support'],
-};
+      employeeId:  'A5X-001',
+      isActive:    true,
+    });
+    console.log('✅ Admin account seeded');
+  }
+}
 
-export const generateId = () => uuidv4();
-
-export const logAudit = (adminId, action, details) => {
-  db.auditLog.push({ id: generateId(), adminId, action, details, timestamp: new Date() });
-};
+export const departments = [
+  'Engineering', 'Sales', 'HR', 'Management',
+  'Operations', 'Finance', 'Marketing', 'Support',
+];

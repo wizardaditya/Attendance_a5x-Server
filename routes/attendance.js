@@ -1,5 +1,7 @@
 import express from 'express';
-import { db, generateId } from '../db.js';
+import Attendance from '../models/Attendance.js';
+import QRCode    from '../models/QRCode.js';
+import User      from '../models/User.js';
 import { authMiddleware, adminOnly, verifyQRToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -7,88 +9,128 @@ const todayStr = () => new Date().toISOString().split('T')[0];
 
 router.post('/checkin', authMiddleware, async (req, res) => {
   const { token, latitude, longitude, deviceId } = req.body;
-  if (!token) return res.status(400).json({ error:'QR token required' });
+  if (!token) return res.status(400).json({ error: 'QR token required' });
+
   let qrData;
-  try { qrData = verifyQRToken(token); if (qrData.type !== 'QR_CHECKIN') throw new Error(); }
-  catch { return res.status(400).json({ error:'Invalid or expired QR code' }); }
-  const qr = db.qrCodes.find(q => q.id === qrData.qrId && q.isActive);
-  if (!qr) return res.status(400).json({ error:'QR code is no longer active' });
+  try {
+    qrData = verifyQRToken(token);
+    if (qrData.type !== 'QR_CHECKIN') throw new Error();
+  } catch { return res.status(400).json({ error: 'Invalid or expired QR code' }); }
+
+  const qr = await QRCode.findById(qrData.qrId);
+  if (!qr || !qr.isActive) return res.status(400).json({ error: 'QR code is no longer active' });
+
   const today = todayStr();
-  const existing = db.attendance.find(a => a.userId === req.user.id && a.date === today);
+  const existing = await Attendance.findOne({ userId: req.user._id, date: today });
+
   if (existing?.checkIn) {
-    if (!existing.checkOut) return res.status(409).json({ error:'Already checked in today', attendance:existing, alreadyCheckedIn:true });
-    return res.status(409).json({ error:'Already completed attendance for today' });
+    if (!existing.checkOut)
+      return res.status(409).json({ error: 'Already checked in today', attendance: existing, alreadyCheckedIn: true });
+    return res.status(409).json({ error: 'Already completed attendance for today' });
   }
+
   const now = new Date();
   const isLate = now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 30);
-  const record = { id:generateId(), userId:req.user.id, userName:req.user.name, userPhone:req.user.phone, department:req.user.department, date:today, checkIn:now, checkOut:null, duration:null, status:isLate?'LATE':'PRESENT', location:qrData.location, latitude:latitude||null, longitude:longitude||null, deviceId:deviceId||null, flagged:false, qrId:qrData.qrId };
-  db.attendance.push(record);
+
+  const record = await Attendance.create({
+    userId:     req.user._id,
+    userName:   req.user.name,
+    userPhone:  req.user.phone,
+    department: req.user.department,
+    date:       today,
+    checkIn:    now,
+    status:     isLate ? 'LATE' : 'PRESENT',
+    location:   qrData.location,
+    latitude:   latitude || null,
+    longitude:  longitude || null,
+    deviceId:   deviceId || null,
+    qrId:       qrData.qrId,
+  });
+
   qr.scanCount += 1;
-  if (req.app.get('io')) req.app.get('io').emit('attendance:checkin', { ...record, user:{ name:req.user.name, avatar:req.user.avatar, department:req.user.department } });
-  res.json({ message:'Check-in successful', attendance:record });
+  await qr.save();
+
+  if (req.app.get('io'))
+    req.app.get('io').emit('attendance:checkin', {
+      ...record.toObject(),
+      user: { name: req.user.name, avatar: req.user.avatar, department: req.user.department },
+    });
+
+  res.json({ message: 'Check-in successful', attendance: record });
 });
 
-router.post('/checkout', authMiddleware, (req, res) => {
-  const today = todayStr();
-  const record = db.attendance.find(a => a.userId === req.user.id && a.date === today && !a.checkOut);
-  if (!record) return res.status(404).json({ error:'No active check-in found for today' });
+router.post('/checkout', authMiddleware, async (req, res) => {
+  const record = await Attendance.findOne({ userId: req.user._id, date: todayStr(), checkOut: null });
+  if (!record) return res.status(404).json({ error: 'No active check-in found for today' });
+
   const now = new Date();
   record.checkOut = now;
   record.duration = Math.round((now - new Date(record.checkIn)) / 60000);
-  if (req.app.get('io')) req.app.get('io').emit('attendance:checkout', { userId:req.user.id, checkOut:now });
-  res.json({ message:'Check-out successful', attendance:record });
+  await record.save();
+
+  if (req.app.get('io'))
+    req.app.get('io').emit('attendance:checkout', { userId: req.user._id, checkOut: now });
+
+  res.json({ message: 'Check-out successful', attendance: record });
 });
 
-router.get('/today', authMiddleware, (req, res) => {
-  const record = db.attendance.find(a => a.userId === req.user.id && a.date === todayStr());
+router.get('/today', authMiddleware, async (req, res) => {
+  const record = await Attendance.findOne({ userId: req.user._id, date: todayStr() });
   res.json(record || null);
 });
 
-router.get('/my', authMiddleware, (req, res) => {
+router.get('/my', authMiddleware, async (req, res) => {
   const { from, to } = req.query;
-  let records = db.attendance.filter(a => a.userId === req.user.id);
-  if (from) records = records.filter(a => a.date >= from);
-  if (to) records = records.filter(a => a.date <= to);
-  res.json(records.sort((a,b) => new Date(b.date) - new Date(a.date)));
-});
-
-router.get('/all', authMiddleware, adminOnly, (req, res) => {
-  const { date, department, status, from, to } = req.query;
-  let records = [...db.attendance];
-  if (date) records = records.filter(a => a.date === date);
-  if (department) records = records.filter(a => a.department === department);
-  if (status) records = records.filter(a => a.status === status);
-  if (from) records = records.filter(a => a.date >= from);
-  if (to) records = records.filter(a => a.date <= to);
-  res.json(records.sort((a,b) => new Date(b.checkIn) - new Date(a.checkIn)));
-});
-
-router.get('/live', authMiddleware, adminOnly, (req, res) => {
-  const today = todayStr();
-  const records = db.attendance.filter(a => a.date === today).map(a => {
-    const user = db.users.find(u => u.id === a.userId);
-    return { ...a, user: user ? { name:user.name, avatar:user.avatar, department:user.department } : null };
-  }).sort((a,b) => new Date(b.checkIn) - new Date(a.checkIn));
+  const filter = { userId: req.user._id };
+  if (from || to) filter.date = {};
+  if (from) filter.date.$gte = from;
+  if (to)   filter.date.$lte = to;
+  const records = await Attendance.find(filter).sort({ date: -1 });
   res.json(records);
 });
 
-router.get('/stats', authMiddleware, adminOnly, (req, res) => {
-  const today = todayStr();
-  const totalEmployees = db.users.filter(u => u.role === 'EMPLOYEE' && u.isActive).length;
-  const todayRecords = db.attendance.filter(a => a.date === today);
-  const present = todayRecords.filter(a => a.status === 'PRESENT').length;
-  const late = todayRecords.filter(a => a.status === 'LATE').length;
-  const checkedIn = todayRecords.filter(a => a.checkIn).length;
-  res.json({ totalEmployees, present, late, absent:totalEmployees - checkedIn, checkedIn, date:today });
+router.get('/all', authMiddleware, adminOnly, async (req, res) => {
+  const { date, department, status, from, to } = req.query;
+  const filter = {};
+  if (date)       filter.date = date;
+  if (department) filter.department = department;
+  if (status)     filter.status = status;
+  if (from || to) { filter.date = filter.date || {}; }
+  if (from && !date) filter.date = { ...filter.date, $gte: from };
+  if (to   && !date) filter.date = { ...filter.date, $lte: to };
+  const records = await Attendance.find(filter).sort({ checkIn: -1 });
+  res.json(records);
 });
 
-router.patch('/:id', authMiddleware, adminOnly, (req, res) => {
-  const record = db.attendance.find(a => a.id === req.params.id);
-  if (!record) return res.status(404).json({ error:'Record not found' });
+router.get('/live', authMiddleware, adminOnly, async (req, res) => {
+  const records = await Attendance.find({ date: todayStr() })
+    .populate('userId', 'name avatar department')
+    .sort({ checkIn: -1 });
+  const enriched = records.map(r => ({
+    ...r.toObject(),
+    user: r.userId ? { name: r.userId.name, avatar: r.userId.avatar, department: r.userId.department } : null,
+  }));
+  res.json(enriched);
+});
+
+router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
+  const today = todayStr();
+  const totalEmployees = await User.countDocuments({ role: 'EMPLOYEE', isActive: true });
+  const todayRecords   = await Attendance.find({ date: today });
+  const present  = todayRecords.filter(a => a.status === 'PRESENT').length;
+  const late     = todayRecords.filter(a => a.status === 'LATE').length;
+  const checkedIn = todayRecords.filter(a => a.checkIn).length;
+  res.json({ totalEmployees, present, late, absent: totalEmployees - checkedIn, checkedIn, date: today });
+});
+
+router.patch('/:id', authMiddleware, adminOnly, async (req, res) => {
+  const record = await Attendance.findById(req.params.id);
+  if (!record) return res.status(404).json({ error: 'Record not found' });
   const { checkIn, checkOut, status } = req.body;
-  if (checkIn) record.checkIn = new Date(checkIn);
+  if (checkIn)  record.checkIn  = new Date(checkIn);
   if (checkOut) { record.checkOut = new Date(checkOut); record.duration = Math.round((new Date(checkOut) - new Date(record.checkIn)) / 60000); }
-  if (status) record.status = status;
+  if (status)   record.status   = status;
+  await record.save();
   res.json(record);
 });
 
