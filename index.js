@@ -81,4 +81,15 @@ app.get('/api/health', (req, res) =>
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`\n🚀 WorkSyne Server → http://localhost:${PORT}\n`);
+
+  // Keep-alive ping every 14 minutes to prevent Render free tier sleep
+  const SELF_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+  setInterval(async () => {
+    try {
+      const res = await fetch(`${SELF_URL}/api/health`);
+      console.log(`💓 Keep-alive ping: ${res.status}`);
+    } catch (e) {
+      console.warn('💓 Keep-alive ping failed:', e.message);
+    }
+  }, 14 * 60 * 1000); // every 14 minutes
 });
