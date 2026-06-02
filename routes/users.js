@@ -22,6 +22,8 @@ router.get('/', authMiddleware, adminOnly, async (req, res) => {
 router.get('/departments', authMiddleware, (req, res) => res.json(departments));
 
 router.get('/:id', authMiddleware, async (req, res) => {
+  if (!req.params.id || req.params.id === 'undefined')
+    return res.status(400).json({ error: 'Invalid user ID' });
   const user = await User.findById(req.params.id).select('-password');
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (req.user.role === 'EMPLOYEE' && req.user._id.toString() !== req.params.id)
@@ -69,36 +71,55 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
 });
 
 router.patch('/:id', authMiddleware, async (req, res) => {
-  const user = await User.findById(req.params.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  if (req.user.role === 'EMPLOYEE' && req.user._id.toString() !== req.params.id)
-    return res.status(403).json({ error: 'Forbidden' });
-  const { name, phone, department, designation, isActive, role } = req.body;
-  if (name) user.name = name;
-  if (phone) user.phone = phone;
-  if (designation) user.designation = designation;
-  if (department && req.user.role !== 'EMPLOYEE') user.department = department;
-  if (typeof isActive === 'boolean' && req.user.role !== 'EMPLOYEE') user.isActive = isActive;
-  if (role && req.user.role === 'ADMIN') user.role = role;
-  await user.save();
-  const { password: _, ...safeUser } = user.toObject();
-  res.json(safeUser);
+  if (!req.params.id || req.params.id === 'undefined')
+    return res.status(400).json({ error: 'Invalid user ID' });
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (req.user.role === 'EMPLOYEE' && req.user._id.toString() !== req.params.id)
+      return res.status(403).json({ error: 'Forbidden' });
+    const { name, phone, department, designation, isActive, role } = req.body;
+    if (name) user.name = name;
+    if (phone) user.phone = phone;
+    if (designation) user.designation = designation;
+    if (department && req.user.role !== 'EMPLOYEE') user.department = department;
+    if (typeof isActive === 'boolean' && req.user.role !== 'EMPLOYEE') user.isActive = isActive;
+    if (role && req.user.role === 'ADMIN') user.role = role;
+    await user.save();
+    const { password: _, ...safeUser } = user.toObject();
+    res.json(safeUser);
+  } catch (err) {
+    console.error('Patch user error:', err.message);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
 });
 
 router.delete('/:id', authMiddleware, adminOnly, async (req, res) => {
-  const user = await User.findById(req.params.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  user.isActive = false;
-  await user.save();
-  res.json({ message: 'User deactivated' });
+  if (!req.params.id || req.params.id === 'undefined')
+    return res.status(400).json({ error: 'Invalid user ID' });
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    user.isActive = false;
+    await user.save();
+    res.json({ message: 'User deactivated' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to deactivate user' });
+  }
 });
 
 router.post('/:id/reset-password', authMiddleware, adminOnly, async (req, res) => {
-  const user = await User.findById(req.params.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  user.password = await bcrypt.hash('Welcome@123', 10);
-  await user.save();
-  res.json({ message: 'Password reset to Welcome@123' });
+  if (!req.params.id || req.params.id === 'undefined')
+    return res.status(400).json({ error: 'Invalid user ID' });
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    user.password = await bcrypt.hash('Welcome@123', 10);
+    await user.save();
+    res.json({ message: 'Password reset to Welcome@123' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
 });
 
 export default router;
