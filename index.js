@@ -5,6 +5,7 @@ import { Server } from 'socket.io';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { connectDB } from './db.js';
+import { startQRScheduler } from './scheduler.js';
 
 dotenv.config();
 connectDB();
@@ -88,6 +89,9 @@ app.get('/api/health', (req, res) =>
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`\n🚀 WorkSyne Server → http://localhost:${PORT}\n`);
+
+  // Start QR auto-scheduler
+  startQRScheduler(io);
 
   // Keep-alive ping every 14 minutes to prevent Render free tier sleep
   const SELF_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
