@@ -130,8 +130,27 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
   const today = todayStr();
   const totalEmployees = await User.countDocuments({ role: 'EMPLOYEE', isActive: true });
   const todayRecords   = await Attendance.find({ date: today });
-  const present  = todayRecords.filter(a => a.status === 'PRESENT').length;
-  const late     = todayRecords.filter(a => a.status === 'LATE').length;
+
+  // Get settings for late threshold
+  const settings = await Settings.findOne();
+  const startTime   = settings?.startTime   || '09:00';
+  const gracePeriod = settings?.gracePeriod ?? 30;
+  const [startH, startM] = startTime.split(':').map(Number);
+  const deadlineMinutes  = startH * 60 + startM + gracePeriod;
+
+  // Recalculate late based on actual checkin time vs settings
+  let present = 0, late = 0;
+  for (const a of todayRecords) {
+    if (!a.checkIn) continue;
+    const checkinTime = new Date(a.checkIn);
+    const checkinMinutes = checkinTime.getHours() * 60 + checkinTime.getMinutes();
+    if (checkinMinutes > deadlineMinutes) {
+      late++;
+    } else {
+      present++;
+    }
+  }
+
   const checkedIn = todayRecords.filter(a => a.checkIn).length;
   res.json({ totalEmployees, present, late, absent: totalEmployees - checkedIn, checkedIn, date: today });
 });
