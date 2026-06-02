@@ -113,10 +113,24 @@ router.patch('/:id', authMiddleware, async (req, res) => {
     return res.status(403).json({ error: 'Forbidden' });
 
   const allowed = ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedDur', 'actualDur', 'tags', 'subtasks', 'assignedTo', 'department'];
+  const prevStatus = task.status;
   allowed.forEach(k => { if (req.body[k] !== undefined) task[k] = req.body[k]; });
   await task.save();
 
-  if (req.app.get('io')) req.app.get('io').emit('task:updated', task);
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('task:updated', task);
+    // Notify admin when employee marks task as DONE
+    if (req.user.role === 'EMPLOYEE' && req.body.status === 'DONE' && prevStatus !== 'DONE') {
+      io.emit('task:completed', {
+        taskId:       task._id,
+        taskTitle:    task.title,
+        completedBy:  req.user.name,
+        department:   req.user.department,
+        completedAt:  new Date(),
+      });
+    }
+  }
   res.json(task);
 });
 
