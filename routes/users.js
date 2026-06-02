@@ -102,7 +102,9 @@ router.delete('/:id', authMiddleware, adminOnly, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    if (user.role === 'ADMIN') return res.status(403).json({ error: 'Cannot delete admin account' });
+    // Prevent deleting yourself only
+    if (user._id.toString() === req.user._id.toString())
+      return res.status(403).json({ error: 'Cannot delete your own account' });
     await User.deleteOne({ _id: req.params.id });
     // Also remove from all teams
     const Team = (await import('../models/Team.js')).default;
