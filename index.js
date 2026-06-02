@@ -22,7 +22,7 @@ const httpServer = createServer(app);
 const RAW_ORIGINS = process.env.CLIENT_URL || 'http://localhost:5173';
 const STATIC_ORIGINS = [
   ...RAW_ORIGINS.split(',').map(o => o.trim()),
-  'https://attendance-a5x-client.vercel.app',
+  'https://attendance-a5x-client.vercel.app/',
   'http://localhost:5173',
 ];
 
@@ -32,6 +32,8 @@ const isAllowedOrigin = (origin) => {
   if (STATIC_ORIGINS.includes(origin)) return true;
   // Allow all Vercel preview deployments for this project
   if (/^https:\/\/attendance-a5x-client.*\.vercel\.app$/.test(origin)) return true;
+  // Allow wizardadityas-projects.vercel.app preview URLs
+  if (/^https:\/\/attendance-a5x-client.*wizardadityas.*\.vercel\.app$/.test(origin)) return true;
   return false;
 };
 
