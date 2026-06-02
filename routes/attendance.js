@@ -133,26 +133,32 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
 
   // Get settings for late threshold
   const settings = await Settings.findOne();
-  const startTime   = settings?.startTime   || '09:00';
-  const gracePeriod = settings?.gracePeriod ?? 30;
+  const startTime    = settings?.startTime   || '09:00';
+  const gracePeriod  = settings?.gracePeriod ?? 30;
+  const timezone     = settings?.timezone    || 'Asia/Kolkata';
   const [startH, startM] = startTime.split(':').map(Number);
   const deadlineMinutes  = startH * 60 + startM + gracePeriod;
 
-  console.log(`Stats calc: startTime=${startTime}, gracePeriod=${gracePeriod}, deadline=${deadlineMinutes}min (${Math.floor(deadlineMinutes/60)}:${deadlineMinutes%60})`);
-
-  // Recalculate late based on actual checkin time vs settings
+  // Recalculate late based on actual checkin time in the office timezone
   let present = 0, late = 0;
   for (const a of todayRecords) {
     if (!a.checkIn) continue;
-    const checkinTime = new Date(a.checkIn);
-    const checkinMinutes = checkinTime.getHours() * 60 + checkinTime.getMinutes();
+    const checkinDate = new Date(a.checkIn);
+
+    // Convert checkin time to office timezone
+    const localTimeStr = checkinDate.toLocaleTimeString('en-IN', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const [hStr, mStr] = localTimeStr.split(':');
+    const checkinMinutes = parseInt(hStr, 10) * 60 + parseInt(mStr, 10);
     const isLate = checkinMinutes > deadlineMinutes;
-    console.log(`${a.userName}: checkin=${checkinTime.toTimeString().slice(0,5)} (${checkinMinutes}min) → ${isLate ? 'LATE' : 'ON TIME'}`);
-    if (isLate) {
-      late++;
-    } else {
-      present++;
-    }
+
+    console.log(`${a.userName}: checkin local=${localTimeStr} (${checkinMinutes}min) deadline=${deadlineMinutes}min → ${isLate ? 'LATE' : 'ON TIME'}`);
+
+    if (isLate) late++; else present++;
   }
 
   const checkedIn = todayRecords.filter(a => a.checkIn).length;
