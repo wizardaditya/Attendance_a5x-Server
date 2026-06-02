@@ -138,13 +138,17 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
   const [startH, startM] = startTime.split(':').map(Number);
   const deadlineMinutes  = startH * 60 + startM + gracePeriod;
 
+  console.log(`Stats calc: startTime=${startTime}, gracePeriod=${gracePeriod}, deadline=${deadlineMinutes}min (${Math.floor(deadlineMinutes/60)}:${deadlineMinutes%60})`);
+
   // Recalculate late based on actual checkin time vs settings
   let present = 0, late = 0;
   for (const a of todayRecords) {
     if (!a.checkIn) continue;
     const checkinTime = new Date(a.checkIn);
     const checkinMinutes = checkinTime.getHours() * 60 + checkinTime.getMinutes();
-    if (checkinMinutes > deadlineMinutes) {
+    const isLate = checkinMinutes > deadlineMinutes;
+    console.log(`${a.userName}: checkin=${checkinTime.toTimeString().slice(0,5)} (${checkinMinutes}min) → ${isLate ? 'LATE' : 'ON TIME'}`);
+    if (isLate) {
       late++;
     } else {
       present++;
