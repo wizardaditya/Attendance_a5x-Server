@@ -15,6 +15,7 @@ import attendanceRoutes  from './routes/attendance.js';
 import userRoutes        from './routes/users.js';
 import taskRoutes        from './routes/tasks.js';
 import announcementRoutes from './routes/announcements.js';
+import settingsRoutes    from './routes/settings.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -78,6 +79,7 @@ app.use('/api/attendance',    checkinLimiter, attendanceRoutes);
 app.use('/api/users',         userRoutes);
 app.use('/api/tasks',         taskRoutes);
 app.use('/api/announcements', announcementRoutes);
+app.use('/api/settings',      settingsRoutes);
 
 app.get('/api/health', (req, res) =>
   res.json({ status: 'ok', app: 'WorkSyne by A5X Industries', time: new Date() })

@@ -2,10 +2,22 @@ import express from 'express';
 import Attendance from '../models/Attendance.js';
 import QRCode    from '../models/QRCode.js';
 import User      from '../models/User.js';
+import Settings  from '../models/Settings.js';
 import { authMiddleware, adminOnly, verifyQRToken } from '../middleware/auth.js';
 
 const router = express.Router();
 const todayStr = () => new Date().toISOString().split('T')[0];
+
+// Helper: check if checkin time is late based on settings
+async function isLateCheckin(now) {
+  const settings = await Settings.findOne();
+  const startTime  = settings?.startTime  || '09:00';
+  const gracePeriod = settings?.gracePeriod ?? 30;
+  const [startH, startM] = startTime.split(':').map(Number);
+  const deadlineMinutes = startH * 60 + startM + gracePeriod;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  return nowMinutes > deadlineMinutes;
+}
 
 router.post('/checkin', authMiddleware, async (req, res) => {
   const { token, latitude, longitude, deviceId } = req.body;
@@ -30,7 +42,7 @@ router.post('/checkin', authMiddleware, async (req, res) => {
   }
 
   const now = new Date();
-  const isLate = now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 30);
+  const late = await isLateCheckin(now);
 
   const record = await Attendance.create({
     userId:     req.user._id,
@@ -39,7 +51,7 @@ router.post('/checkin', authMiddleware, async (req, res) => {
     department: req.user.department,
     date:       today,
     checkIn:    now,
-    status:     isLate ? 'LATE' : 'PRESENT',
+    status:     late ? 'LATE' : 'PRESENT',
     location:   qrData.location,
     latitude:   latitude || null,
     longitude:  longitude || null,
@@ -98,8 +110,9 @@ router.get('/all', authMiddleware, adminOnly, async (req, res) => {
   if (from || to) { filter.date = filter.date || {}; }
   if (from && !date) filter.date = { ...filter.date, $gte: from };
   if (to   && !date) filter.date = { ...filter.date, $lte: to };
-  const records = await Attendance.find(filter).sort({ checkIn: -1 });
-  res.json(records);
+  const records = await Attendance.find(filter).sort({ checkIn: -1 }).lean();
+  const normalized = records.map(r => ({ ...r, id: r._id.toString(), _id: r._id.toString() }));
+  res.json(normalized);
 });
 
 router.get('/live', authMiddleware, adminOnly, async (req, res) => {
@@ -124,14 +137,33 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
 });
 
 router.patch('/:id', authMiddleware, adminOnly, async (req, res) => {
-  const record = await Attendance.findById(req.params.id);
-  if (!record) return res.status(404).json({ error: 'Record not found' });
-  const { checkIn, checkOut, status } = req.body;
-  if (checkIn)  record.checkIn  = new Date(checkIn);
-  if (checkOut) { record.checkOut = new Date(checkOut); record.duration = Math.round((new Date(checkOut) - new Date(record.checkIn)) / 60000); }
-  if (status)   record.status   = status;
-  await record.save();
-  res.json(record);
+  if (!req.params.id || req.params.id === 'undefined')
+    return res.status(400).json({ error: 'Invalid record ID' });
+  try {
+    const record = await Attendance.findById(req.params.id);
+    if (!record) return res.status(404).json({ error: 'Record not found' });
+    const { checkIn, checkOut, status } = req.body;
+
+    // checkIn/checkOut come as "HH:MM" time string from frontend - combine with record date
+    if (checkIn) {
+      const [h, m] = checkIn.split(':');
+      const d = new Date(`${record.date}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00`);
+      record.checkIn = d;
+    }
+    if (checkOut) {
+      const [h, m] = checkOut.split(':');
+      const d = new Date(`${record.date}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00`);
+      record.checkOut = d;
+      if (record.checkIn) record.duration = Math.round((d - new Date(record.checkIn)) / 60000);
+    }
+    if (status) record.status = status;
+    await record.save();
+    const obj = record.toObject();
+    res.json({ ...obj, id: obj._id.toString(), _id: obj._id.toString() });
+  } catch (err) {
+    console.error('Patch attendance error:', err.message);
+    res.status(500).json({ error: 'Failed to update record' });
+  }
 });
 
 export default router;
