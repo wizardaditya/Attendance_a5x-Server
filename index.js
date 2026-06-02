@@ -18,6 +18,7 @@ import taskRoutes        from './routes/tasks.js';
 import announcementRoutes from './routes/announcements.js';
 import settingsRoutes    from './routes/settings.js';
 import teamRoutes        from './routes/teams.js';
+import founderRoutes     from './routes/founder.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -83,6 +84,7 @@ app.use('/api/tasks',         taskRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/settings',      settingsRoutes);
 app.use('/api/teams',         teamRoutes);
+app.use('/api/founder',       founderRoutes);
 
 app.get('/api/health', (req, res) =>
   res.json({ status: 'ok', app: 'WorkSyne by A5X Industries', time: new Date() })

@@ -56,7 +56,7 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
       password:    await bcrypt.hash('Welcome@123', 10),
       role:        role || 'EMPLOYEE',
       department,
-      designation: designation || 'Employee',
+      designation: designation || (role === 'FOUNDER' ? 'Co-Founder' : 'Employee'),
       employeeId,
       isActive:    true,
     });

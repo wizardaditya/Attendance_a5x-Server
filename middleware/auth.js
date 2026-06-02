@@ -22,6 +22,12 @@ export function adminOnly(req, res, next) {
   next();
 }
 
+export function adminOrFounder(req, res, next) {
+  if (req.user.role !== 'ADMIN' && req.user.role !== 'FOUNDER')
+    return res.status(403).json({ error: 'Access denied' });
+  next();
+}
+
 export const generateToken = (user) =>
   jwt.sign({ id: user._id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
 
