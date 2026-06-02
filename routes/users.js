@@ -15,8 +15,10 @@ router.get('/', authMiddleware, adminOnly, async (req, res) => {
     { email: { $regex: search, $options: 'i' } },
     { phone: { $regex: search, $options: 'i' } },
   ];
-  const users = await User.find(filter).select('-password');
-  res.json(users);
+  const users = await User.find(filter).select('-password').lean();
+  // normalize: add id as string so frontend can use either emp.id or emp._id
+  const normalized = users.map(u => ({ ...u, id: u._id.toString(), _id: u._id.toString() }));
+  res.json(normalized);
 });
 
 router.get('/departments', authMiddleware, (req, res) => res.json(departments));
