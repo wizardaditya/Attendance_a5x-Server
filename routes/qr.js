@@ -52,12 +52,29 @@ router.post('/regenerate/:id', authMiddleware, adminOnly, async (req, res) => {
   res.json(qr);
 });
 
+// Deactivate (soft delete - makes QR inactive)
 router.delete('/:id', authMiddleware, adminOnly, async (req, res) => {
-  const qr = await QRCode.findById(req.params.id);
-  if (!qr) return res.status(404).json({ error: 'QR not found' });
-  qr.isActive = false;
-  await qr.save();
-  res.json({ message: 'QR invalidated' });
+  try {
+    const qr = await QRCode.findById(req.params.id);
+    if (!qr) return res.status(404).json({ error: 'QR not found' });
+    qr.isActive = false;
+    await qr.save();
+    res.json({ message: 'QR deactivated', qr });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to deactivate QR' });
+  }
+});
+
+// Permanently delete QR
+router.delete('/:id/permanent', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const qr = await QRCode.findById(req.params.id);
+    if (!qr) return res.status(404).json({ error: 'QR not found' });
+    await QRCode.deleteOne({ _id: req.params.id });
+    res.json({ message: 'QR permanently deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete QR' });
+  }
 });
 
 router.post('/validate', async (req, res) => {
