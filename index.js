@@ -20,13 +20,18 @@ const app = express();
 const httpServer = createServer(app);
 
 const RAW_ORIGINS = process.env.CLIENT_URL || 'http://localhost:5173';
-const ALLOWED_ORIGINS = RAW_ORIGINS.split(',').map(o => o.trim());
+const ALLOWED_ORIGINS = [
+  ...RAW_ORIGINS.split(',').map(o => o.trim()),
+  'https://attendance-a5x-client.vercel.app', // always allow production client
+];
+// Remove duplicates
+const UNIQUE_ORIGINS = [...new Set(ALLOWED_ORIGINS)];
 
-console.log('Allowed Origins:', ALLOWED_ORIGINS);
+console.log('Allowed Origins:', UNIQUE_ORIGINS);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: ALLOWED_ORIGINS,
+    origin: UNIQUE_ORIGINS,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -39,14 +44,14 @@ app.set('io', io);
 
 // Handle preflight for all routes
 app.options('*', cors({
-  origin: ALLOWED_ORIGINS,
+  origin: UNIQUE_ORIGINS,
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 app.use(cors({
-  origin: ALLOWED_ORIGINS,
+  origin: UNIQUE_ORIGINS,
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
