@@ -102,11 +102,14 @@ router.delete('/:id', authMiddleware, adminOnly, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    user.isActive = false;
-    await user.save();
-    res.json({ message: 'User deactivated' });
+    if (user.role === 'ADMIN') return res.status(403).json({ error: 'Cannot delete admin account' });
+    await User.deleteOne({ _id: req.params.id });
+    // Also remove from all teams
+    const Team = (await import('../models/Team.js')).default;
+    await Team.updateMany({ members: req.params.id }, { $pull: { members: req.params.id } });
+    res.json({ message: 'Employee deleted permanently' });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to deactivate user' });
+    res.status(500).json({ error: 'Failed to delete employee' });
   }
 });
 
