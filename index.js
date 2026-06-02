@@ -22,8 +22,14 @@ const httpServer = createServer(app);
 const RAW_ORIGINS = process.env.CLIENT_URL || 'http://localhost:5173';
 const ALLOWED_ORIGINS = RAW_ORIGINS.split(',').map(o => o.trim());
 
+console.log('Allowed Origins:', ALLOWED_ORIGINS);
+
 const io = new Server(httpServer, {
-  cors: { origin: ALLOWED_ORIGINS, methods: ['GET', 'POST'] },
+  cors: {
+    origin: ALLOWED_ORIGINS,
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
 });
 io.on('connection', socket => {
   console.log('Client connected:', socket.id);
@@ -31,7 +37,20 @@ io.on('connection', socket => {
 });
 app.set('io', io);
 
-app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
+// Handle preflight for all routes
+app.options('*', cors({
+  origin: ALLOWED_ORIGINS,
+  credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
+app.use(cors({
+  origin: ALLOWED_ORIGINS,
+  credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json({ limit: '10mb' }));
 
 const checkinLimiter = rateLimit({ windowMs: 60 * 1000, max: 10 });
