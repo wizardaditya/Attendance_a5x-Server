@@ -7,13 +7,16 @@ const founderTaskSchema = new mongoose.Schema({
   priority:    { type: String, enum: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'], default: 'MEDIUM' },
   dueDate:     { type: Date, default: null },
   createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  // Shared with other founders
+  // Shared/visible to other founders
   sharedWith:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  // If shared as assignment to another founder
+  // Assigned to a specific founder
   assignedTo:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   isShared:    { type: Boolean, default: false },
-  note:        { type: String, default: '' }, // sharing note/message
+  note:        { type: String, default: '' },
   tags:        [String],
+  // Employee assignment
+  employeeAssignees: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  employeeTaskId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Task', default: null },
 }, { timestamps: true });
 
 export default mongoose.model('FounderTask', founderTaskSchema);
