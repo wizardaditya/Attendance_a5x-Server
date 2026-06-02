@@ -149,44 +149,119 @@ router.delete('/tasks/:id', authMiddleware, adminOrFounder, async (req, res) => 
   }
 });
 
-// Share task with another founder
+// Share/assign task to ANY user (founder or employee)
 router.post('/tasks/:id/share', authMiddleware, adminOrFounder, async (req, res) => {
   try {
     const task = await FounderTask.findById(req.params.id);
     if (!task) return res.status(404).json({ error: 'Task not found' });
     if (task.createdBy.toString() !== req.user._id.toString())
       return res.status(403).json({ error: 'Only creator can share' });
-    const { founderId, assignedTo, note } = req.body;
-    if (!founderId) return res.status(400).json({ error: 'Founder ID required' });
-    const target = await User.findById(founderId);
-    if (!target || target.role !== 'FOUNDER')
-      return res.status(400).json({ error: 'Target must be a FOUNDER' });
-    if (!task.sharedWith.map(id => id.toString()).includes(founderId))
-      task.sharedWith.push(founderId);
-    if (assignedTo) task.assignedTo = founderId;
-    if (note)       task.note       = note;
+
+    const { targetId, assignedTo, note, shareType } = req.body;
+    // targetId = user to share with (founder or employee)
+    if (!targetId) return res.status(400).json({ error: 'Target user ID required' });
+
+    const target = await User.findById(targetId);
+    if (!target || !target.isActive) return res.status(404).json({ error: 'User not found' });
+
+    if (target.role === 'FOUNDER') {
+      // Share with founder - add to sharedWith
+      if (!task.sharedWith.map(id => id.toString()).includes(targetId))
+        task.sharedWith.push(targetId);
+      if (assignedTo) task.assignedTo = targetId;
+    } else {
+      // Assign to employee - create a regular Task
+      const newEmployeeTask = await Task.create({
+        title:       task.title,
+        description: `${task.description || ''}\n\n${note ? `Note from ${req.user.name}: ${note}` : ''}`.trim(),
+        priority:    task.priority,
+        assignedTo:  [targetId],
+        assignMode:  'individuals',
+        department:  target.department,
+        createdBy:   req.user._id,
+        dueDate:     task.dueDate,
+        tags:        task.tags,
+      });
+      if (!task.employeeAssignees) task.employeeAssignees = [];
+      task.employeeAssignees.push(targetId);
+      task.employeeTaskId = newEmployeeTask._id;
+      req.app.get('io')?.emit('task:created', newEmployeeTask);
+    }
+
+    if (note) task.note = note;
     task.isShared = true;
     await task.save();
+
     req.app.get('io')?.emit('founder:task-shared', {
       taskId: task._id.toString(), taskTitle: task.title,
-      sharedBy: req.user.name, sharedWith: founderId, note,
+      sharedBy: req.user.name, sharedWith: targetId,
+      targetRole: target.role, targetName: target.name, note,
     });
+
     const populated = await populateTask(task._id);
     res.json({ ...populated, id: populated._id.toString(), _id: populated._id.toString() });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Failed to share task' });
   }
 });
 
-// List all founders (for sharing UI)
-router.get('/founders', authMiddleware, adminOrFounder, async (req, res) => {
+// Self-assign a task
+router.post('/tasks/:id/self-assign', authMiddleware, adminOrFounder, async (req, res) => {
+  try {
+    const task = await FounderTask.findById(req.params.id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    task.assignedTo = req.user._id;
+    if (!task.sharedWith.map(id => id.toString()).includes(req.user._id.toString()))
+      task.sharedWith.push(req.user._id);
+    await task.save();
+    const populated = await populateTask(task._id);
+    res.json({ ...populated, id: populated._id.toString(), _id: populated._id.toString() });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to self-assign' });
+  }
+});
+
+// Founders team pulse
+router.get('/team/pulse', authMiddleware, adminOrFounder, async (req, res) => {
   try {
     const founders = await User.find({ role: 'FOUNDER', isActive: true })
-      .select('name email designation')
+      .select('name designation email')
       .lean();
-    res.json(founders.map(f => ({ ...f, id: f._id.toString(), _id: f._id.toString() })));
+    const today = todayStr();
+    const Attendance_ = Attendance;
+    const records = await Attendance_.find({
+      userId: { $in: founders.map(f => f._id) },
+      date: today,
+    });
+    const pulse = founders.map(f => {
+      const rec = records.find(r => r.userId.toString() === f._id.toString());
+      return {
+        id:          f._id.toString(),
+        name:        f.name,
+        designation: f.designation,
+        email:       f.email,
+        present:     !!rec?.checkIn,
+        status:      rec?.status || 'N/A',
+        checkIn:     rec?.checkIn || null,
+        note:        'No attendance required',
+      };
+    });
+    res.json({ founders: pulse });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to load founders' });
+    res.status(500).json({ error: 'Failed to load founders pulse' });
+  }
+});
+
+// List all founders + employees for sharing UI
+router.get('/all-users', authMiddleware, adminOrFounder, async (req, res) => {
+  try {
+    const users = await User.find({ isActive: true, role: { $ne: 'ADMIN' } })
+      .select('name email designation department role')
+      .lean();
+    res.json(users.map(u => ({ ...u, id: u._id.toString(), _id: u._id.toString() })));
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load users' });
   }
 });
 
