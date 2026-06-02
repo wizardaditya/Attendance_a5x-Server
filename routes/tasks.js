@@ -1,6 +1,7 @@
 import express from 'express';
 import Task from '../models/Task.js';
 import User from '../models/User.js';
+import Team from '../models/Team.js';
 import { departments } from '../db.js';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
 
@@ -71,17 +72,27 @@ router.get('/department-summary', authMiddleware, adminOnly, async (req, res) =>
 });
 
 router.post('/', authMiddleware, async (req, res) => {
-  const { title, description, priority, dueDate, estimatedDur, tags, subtasks, recurrence, assignMode, department, assignedTo } = req.body;
+  const { title, description, priority, dueDate, estimatedDur, tags, subtasks, recurrence, assignMode, department, assignedTo, teamId } = req.body;
   if (!title)      return res.status(400).json({ error: 'Title required' });
-  if (!department) return res.status(400).json({ error: 'Department required' });
 
   let finalAssignedTo = [];
-  if (assignMode === 'department') {
+  let finalDepartment = department;
+
+  if (assignMode === 'team') {
+    // Assign to entire team
+    if (!teamId) return res.status(400).json({ error: 'Team required for team assignment' });
+    const team = await Team.findById(teamId);
+    if (!team) return res.status(404).json({ error: 'Team not found' });
+    finalAssignedTo = team.members;
+    finalDepartment = team.department;
+  } else if (assignMode === 'department') {
+    if (!department) return res.status(400).json({ error: 'Department required' });
     const members = await User.find({ department, isActive: true, role: 'EMPLOYEE' });
     if (members.length === 0)
       return res.status(400).json({ error: `No active employees in ${department}` });
     finalAssignedTo = members.map(u => u._id);
   } else {
+    if (!department) return res.status(400).json({ error: 'Department required' });
     if (!assignedTo || assignedTo.length === 0)
       return res.status(400).json({ error: 'Select at least one person' });
     finalAssignedTo = assignedTo;
@@ -93,7 +104,8 @@ router.post('/', authMiddleware, async (req, res) => {
     priority:     priority || 'MEDIUM',
     assignedTo:   finalAssignedTo,
     assignMode:   assignMode || 'individuals',
-    department,
+    teamId:       teamId || null,
+    department:   finalDepartment,
     createdBy:    req.user._id,
     dueDate:      dueDate ? new Date(dueDate) : null,
     estimatedDur: estimatedDur || null,
