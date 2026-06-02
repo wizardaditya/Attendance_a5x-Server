@@ -20,21 +20,39 @@ const app = express();
 const httpServer = createServer(app);
 
 const RAW_ORIGINS = process.env.CLIENT_URL || 'http://localhost:5173';
-const ALLOWED_ORIGINS = [
+const STATIC_ORIGINS = [
   ...RAW_ORIGINS.split(',').map(o => o.trim()),
-  'https://attendance-a5x-client.vercel.app', // always allow production client
+  'https://attendance-a5x-client.vercel.app',
+  'http://localhost:5173',
 ];
-// Remove duplicates
-const UNIQUE_ORIGINS = [...new Set(ALLOWED_ORIGINS)];
 
-console.log('Allowed Origins:', UNIQUE_ORIGINS);
+// Dynamic origin check - allows all *.vercel.app preview deployments for this project
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true; // allow server-to-server
+  if (STATIC_ORIGINS.includes(origin)) return true;
+  // Allow all Vercel preview deployments for this project
+  if (/^https:\/\/attendance-a5x-client.*\.vercel\.app$/.test(origin)) return true;
+  return false;
+};
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+    } else {
+      console.warn('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+console.log('Static Allowed Origins:', STATIC_ORIGINS);
 
 const io = new Server(httpServer, {
-  cors: {
-    origin: UNIQUE_ORIGINS,
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
+  cors: corsOptions,
 });
 io.on('connection', socket => {
   console.log('Client connected:', socket.id);
@@ -43,19 +61,8 @@ io.on('connection', socket => {
 app.set('io', io);
 
 // Handle preflight for all routes
-app.options('*', cors({
-  origin: UNIQUE_ORIGINS,
-  credentials: true,
-  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
-
-app.use(cors({
-  origin: UNIQUE_ORIGINS,
-  credentials: true,
-  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 
 const checkinLimiter = rateLimit({ windowMs: 60 * 1000, max: 10 });
