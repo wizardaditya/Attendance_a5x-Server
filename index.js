@@ -90,9 +90,26 @@ app.get('/api/health', (req, res) =>
   res.json({ status: 'ok', app: 'WorkSyne by A5X Industries', time: new Date() })
 );
 
+// ── Test email route (admin only via query param) ──────────────────────────
+app.get('/api/test-email', async (req, res) => {
+  const { to } = req.query;
+  if (!to) return res.status(400).json({ error: 'Pass ?to=youremail@gmail.com' });
+  try {
+    const { sendWelcomeEmail } = await import('./services/email.js');
+    await sendWelcomeEmail({
+      name: 'Test User', email: to, employeeId: 'A5X-TEST',
+      department: 'Engineering', designation: 'Tester', role: 'EMPLOYEE',
+    });
+    res.json({ success: true, message: `Test email sent to ${to}`, emailUser: process.env.EMAIL_USER });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`\n🚀 WorkSyne Server → http://localhost:${PORT}\n`);
+  console.log(`📧 Email config: USER=${process.env.EMAIL_USER || '❌ NOT SET'}, PASS=${process.env.EMAIL_PASS ? '✅ SET' : '❌ NOT SET'}`);
 
   // Start QR auto-scheduler
   startQRScheduler(io);
