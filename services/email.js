@@ -1,31 +1,18 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
-// ── Transporter setup — recreated fresh every call so env vars are always read ──
-function getTransporter() {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('⚠️  Email not configured - EMAIL_USER or EMAIL_PASS missing');
+// ── Resend client ────────────────────────────────────────────────────────────
+function getResend() {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('⚠️  Email not configured - RESEND_API_KEY missing');
     return null;
   }
-  return nodemailer.createTransport({
-    host:   'smtp.gmail.com',
-    port:   587,
-    secure: false, // STARTTLS — works on Render free tier
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-    tls: {
-      rejectUnauthorized: false,
-    },
-    connectionTimeout: 15000,
-    greetingTimeout:   10000,
-    socketTimeout:     20000,
-  });
+  return new Resend(process.env.RESEND_API_KEY);
 }
 
 const COMPANY  = process.env.COMPANY_NAME || 'A5X Industries';
 const APP_NAME = 'WorkSyne';
 const ACCENT   = '#39ff14';
+const FROM     = process.env.EMAIL_FROM || 'onboarding@resend.dev';
 
 // ── Base HTML template ───────────────────────────────────────────────────────
 function baseTemplate(title, bodyHtml) {
@@ -41,7 +28,6 @@ function baseTemplate(title, bodyHtml) {
     <tr>
       <td align="center" style="padding:32px 16px;">
         <table width="100%" style="max-width:560px;background:#111;border-radius:16px;border:1px solid #1f1f1f;overflow:hidden;">
-          <!-- Header -->
           <tr>
             <td style="background:#0d0d0d;padding:20px 28px;border-bottom:2px solid ${ACCENT};">
               <span style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.5px;">
@@ -50,13 +36,11 @@ function baseTemplate(title, bodyHtml) {
               <span style="float:right;font-size:11px;color:#6b7280;line-height:28px;">${COMPANY}</span>
             </td>
           </tr>
-          <!-- Body -->
           <tr>
             <td style="padding:28px;">
               ${bodyHtml}
             </td>
           </tr>
-          <!-- Footer -->
           <tr>
             <td style="padding:16px 28px;background:#0d0d0d;border-top:1px solid #1a1a1a;font-size:11px;color:#4b5563;text-align:center;">
               This is an automated message from ${APP_NAME} · ${COMPANY}<br/>
@@ -73,20 +57,21 @@ function baseTemplate(title, bodyHtml) {
 
 // ── Generic send helper ──────────────────────────────────────────────────────
 async function sendMail({ to, subject, html }) {
-  const t = getTransporter();
-  if (!t) return; // email not configured, skip silently
+  const resend = getResend();
+  if (!resend) return;
 
-  const recipients = Array.isArray(to) ? to.join(',') : to;
-  if (!recipients) return;
+  const recipients = Array.isArray(to) ? to : [to];
+  const filtered   = recipients.filter(Boolean);
+  if (filtered.length === 0) return;
 
   try {
-    await t.sendMail({
-      from:    `"${APP_NAME} · ${COMPANY}" <${process.env.EMAIL_USER}>`,
-      to:      recipients,
+    await resend.emails.send({
+      from:    `${APP_NAME} · ${COMPANY} <${FROM}>`,
+      to:      filtered,
       subject: `[${APP_NAME}] ${subject}`,
       html,
     });
-    console.log(`📧 Email sent: "${subject}" → ${recipients}`);
+    console.log(`📧 Email sent: "${subject}" → ${filtered.join(', ')}`);
   } catch (err) {
     console.error('📧 Email send failed:', err.message);
   }
@@ -136,7 +121,7 @@ export async function sendTaskAssignedEmail({ taskTitle, description, priority, 
   await sendMail({ to: recipient, subject: `New Task Assigned: ${taskTitle}`, html });
 }
 
-// 3. Task Completed - notify founders/admin
+// 3. Task Completed
 export async function sendTaskCompletedEmail({ taskTitle, completedByName, department, completedAt, recipients }) {
   const time = new Date(completedAt).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
   const html = baseTemplate(`Task Completed: ${taskTitle}`, `
@@ -166,7 +151,7 @@ export async function sendTaskCompletedEmail({ taskTitle, completedByName, depar
   await sendMail({ to: recipients, subject: `✅ Task Completed: ${taskTitle} by ${completedByName}`, html });
 }
 
-// 4. Founder shares a task with another founder
+// 4. Founder shares a task
 export async function sendFounderTaskSharedEmail({ taskTitle, description, priority, dueDate, sharedByName, note, recipient }) {
   const due = dueDate ? new Date(dueDate).toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' }) : 'No due date';
   const priColor = { URGENT:'#f87171', HIGH:'#fb923c', MEDIUM:'#f5e642', LOW:ACCENT }[priority] || ACCENT;
@@ -191,7 +176,7 @@ export async function sendFounderTaskSharedEmail({ taskTitle, description, prior
         <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:${ACCENT};font-weight:600;">${due}</td>
       </tr>
     </table>
-    <p style="font-size:12px;color:#6b7280;margin:0;">Login to <strong style="color:#9ca3af">WorkSyne</strong> to view this task in your Founder board.</p>
+    <p style="font-size:12px;color:#6b7280;margin:0;">Login to <strong style="color:#9ca3af">WorkSyne</strong> to view this task.</p>
   `);
   await sendMail({ to: recipient, subject: `Task Shared: ${taskTitle} (from ${sharedByName})`, html });
 }
