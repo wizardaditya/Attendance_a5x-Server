@@ -79,12 +79,18 @@ router.get('/overview/stats', authMiddleware, adminOrFounder, async (req, res) =
 // ═══════════════════════════════════════════
 
 // List tasks (own + shared with me)
+// ?mine=true → only tasks created by me
 router.get('/tasks', authMiddleware, adminOrFounder, async (req, res) => {
   try {
-    const uid   = req.user._id;
-    const tasks = await FounderTask.find({
-      $or: [{ createdBy: uid }, { sharedWith: uid }, { assignedTo: uid }],
-    })
+    const uid = req.user._id;
+
+    // mine=true: only my own tasks (for My Tasks page)
+    // mine=false/absent: all tasks I'm involved in (for Team Tasks page)
+    const filter = req.query.mine === 'true'
+      ? { createdBy: uid }
+      : { $or: [{ createdBy: uid }, { sharedWith: uid }, { assignedTo: uid }] };
+
+    const tasks = await FounderTask.find(filter)
       .populate('createdBy',  'name')
       .populate('sharedWith', 'name')
       .populate('assignedTo', 'name')
