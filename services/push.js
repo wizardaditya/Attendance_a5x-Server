@@ -19,6 +19,7 @@ export async function sendPushToUsers(userIds, { title, body, icon, url }) {
 
   const ids = Array.isArray(userIds) ? userIds : [userIds];
   const subs = await PushSubscription.find({ userId: { $in: ids } });
+  console.log(`🔔 Push: found ${subs.length} subscriptions for ${ids.length} users`);
   if (subs.length === 0) return;
 
   const payload = JSON.stringify({
@@ -53,6 +54,7 @@ export async function sendPushToAll({ title, body, icon, url }) {
   if (!process.env.VAPID_PUBLIC_KEY) return;
 
   const subs = await PushSubscription.find();
+  console.log(`🔔 Push broadcast: found ${subs.length} total subscriptions`);
   if (subs.length === 0) return;
 
   const payload = JSON.stringify({

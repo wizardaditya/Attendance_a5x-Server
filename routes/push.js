@@ -20,7 +20,7 @@ router.post('/subscribe', authMiddleware, async (req, res) => {
     await PushSubscription.findOneAndUpdate(
       { 'subscription.endpoint': subscription.endpoint },
       { userId: req.user._id, subscription },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
     res.json({ success: true });
   } catch (err) {
