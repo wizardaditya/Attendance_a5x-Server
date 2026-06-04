@@ -1,61 +1,30 @@
+// import nodemailer from 'nodemailer';  // commented out — using Resend only
 import { Resend } from 'resend';
 
-// ── Resend client ────────────────────────────────────────────────────────────
-function getResend() {
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('⚠️  Email not configured - RESEND_API_KEY missing');
-    return null;
-  }
-  return new Resend(process.env.RESEND_API_KEY);
-}
-
-const COMPANY  = process.env.COMPANY_NAME || 'A5X Industries';
+// ─────────────────────────────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────────────────────────────
+const COMPANY  = process.env.COMPANY_NAME || 'A5x Industries';
 const APP_NAME = 'WorkSyne';
 const ACCENT   = '#39ff14';
-const FROM     = process.env.EMAIL_FROM || 'onboarding@resend.dev';
 
-// ── Base HTML template ───────────────────────────────────────────────────────
-function baseTemplate(title, bodyHtml) {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>${title}</title>
-</head>
-<body style="margin:0;padding:0;background:#0a0a0a;font-family:'Segoe UI',Arial,sans-serif;color:#f0f0f0;">
-  <table width="100%" cellpadding="0" cellspacing="0">
-    <tr>
-      <td align="center" style="padding:32px 16px;">
-        <table width="100%" style="max-width:560px;background:#111;border-radius:16px;border:1px solid #1f1f1f;overflow:hidden;">
-          <tr>
-            <td style="background:#0d0d0d;padding:20px 28px;border-bottom:2px solid ${ACCENT};">
-              <span style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.5px;">
-                WORK<span style="color:${ACCENT}">SYNE</span>
-              </span>
-              <span style="float:right;font-size:11px;color:#6b7280;line-height:28px;">${COMPANY}</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:28px;">
-              ${bodyHtml}
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:16px 28px;background:#0d0d0d;border-top:1px solid #1a1a1a;font-size:11px;color:#4b5563;text-align:center;">
-              This is an automated message from ${APP_NAME} · ${COMPANY}<br/>
-              Please do not reply to this email.
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+// ─────────────────────────────────────────────────────────────────────────────
+// RESEND CLIENT
+// ─────────────────────────────────────────────────────────────────────────────
+let _resend = null;
+function getResend() {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('⚠️  Email skipped — RESEND_API_KEY not configured in .env');
+    return null;
+  }
+  if (_resend) return _resend;
+  _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
 }
 
-// ── Generic send helper ──────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// GENERIC SEND HELPER
+// ─────────────────────────────────────────────────────────────────────────────
 async function sendMail({ to, subject, html }) {
   const resend = getResend();
   if (!resend) return;
@@ -64,180 +33,285 @@ async function sendMail({ to, subject, html }) {
   const filtered   = recipients.filter(Boolean);
   if (filtered.length === 0) return;
 
+  const from     = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+  const fromName = `${APP_NAME} · ${COMPANY}`;
+
   try {
     await resend.emails.send({
-      from:    `${APP_NAME} · ${COMPANY} <${FROM}>`,
+      from:    `${fromName} <${from}>`,
       to:      filtered,
       subject: `[${APP_NAME}] ${subject}`,
       html,
     });
-    console.log(`📧 Email sent: "${subject}" → ${filtered.join(', ')}`);
+    console.log(`📧 [Resend] Sent: "${subject}" → ${filtered.join(', ')}`);
   } catch (err) {
-    console.error('📧 Email send failed:', err.message);
+    console.error('📧 [Resend] Failed:', err.message);
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────────────────
+// BASE HTML TEMPLATE
+// ─────────────────────────────────────────────────────────────────────────────
+function baseTemplate(title, bodyHtml) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>${title}</title>
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:'Segoe UI',Arial,sans-serif;color:#1a1a1a;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:36px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width:560px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:#0d0d0d;padding:22px 28px;border-bottom:3px solid ${ACCENT};">
+              <span style="font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
+                WORK<span style="color:${ACCENT}">SYNE</span>
+              </span>
+              <span style="float:right;font-size:11px;color:#9ca3af;line-height:28px;">${COMPANY}</span>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px 28px;">
+              ${bodyHtml}
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:16px 28px;background:#f9fafb;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af;text-align:center;line-height:1.6;">
+              This is an automated message from <strong style="color:#6b7280;">${APP_NAME}</strong> · ${COMPANY}<br/>
+              Please do not reply to this email.
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+// helper: priority badge colors
+function priColors(priority) {
+  const map = {
+    URGENT: { text: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
+    HIGH:   { text: '#ea580c', bg: '#fff7ed', border: '#fed7aa' },
+    MEDIUM: { text: '#d97706', bg: '#fffbeb', border: '#fde68a' },
+    LOW:    { text: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+  };
+  return map[priority] || map.LOW;
+}
+
+// helper: info row
+function infoRow(label, value, valueColor) {
+  return `
+  <tr>
+    <td style="padding:10px 14px;background:#f9fafb;border-radius:8px 0 0 8px;font-size:12px;color:#6b7280;width:38%;border:1px solid #e5e7eb;border-right:none;">${label}</td>
+    <td style="padding:10px 14px;background:#f9fafb;border-radius:0 8px 8px 0;font-size:13px;color:${valueColor || '#111'};font-weight:600;border:1px solid #e5e7eb;border-left:none;">${value}</td>
+  </tr>
+  <tr><td colspan="2" style="height:5px;"></td></tr>`;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // EMAIL TEMPLATES
-// ════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 
 // 1. New Announcement
 export async function sendAnnouncementEmail({ title, body, priority, createdByName, recipients }) {
-  const priorityColor = priority === 'URGENT' ? '#f87171' : priority === 'HIGH' ? '#fb923c' : ACCENT;
-  const html = baseTemplate(`New Announcement: ${title}`, `
-    <h2 style="font-size:18px;font-weight:700;color:#fff;margin:0 0 6px;">${title}</h2>
-    <span style="display:inline-block;background:${priorityColor}20;color:${priorityColor};font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;border:1px solid ${priorityColor}44;margin-bottom:16px;">
+  const c = priority === 'URGENT' ? priColors('URGENT')
+           : priority === 'HIGH'  ? priColors('HIGH')
+           : { text: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' };
+
+  const html = baseTemplate(`Announcement: ${title}`, `
+    <h2 style="font-size:20px;font-weight:700;color:#111;margin:0 0 10px;">${title}</h2>
+
+    <span style="display:inline-block;background:${c.bg};color:${c.text};font-size:11px;font-weight:700;
+      padding:4px 12px;border-radius:999px;border:1px solid ${c.border};margin-bottom:20px;text-transform:uppercase;letter-spacing:0.5px;">
       📢 ${priority || 'GENERAL'}
     </span>
-    <p style="font-size:14px;color:#d1d5db;line-height:1.6;margin:0 0 20px;">${body}</p>
-    <p style="font-size:12px;color:#6b7280;margin:0;">Posted by <strong style="color:#9ca3af">${createdByName}</strong></p>
+
+    <div style="background:#f9fafb;border-left:4px solid ${ACCENT};border-radius:0 8px 8px 0;
+      padding:14px 18px;margin-bottom:24px;font-size:14px;color:#374151;line-height:1.7;white-space:pre-line;">
+      ${body}
+    </div>
+
+    <hr style="border:none;border-top:1px solid #e5e7eb;margin-bottom:14px;"/>
+    <p style="font-size:12px;color:#9ca3af;margin:0;">
+      Posted by <strong style="color:#374151;">${createdByName}</strong>
+    </p>
   `);
-  await sendMail({ to: recipients, subject: `New Announcement: ${title}`, html });
+
+  await sendMail({ to: recipients, subject: `Announcement: ${title}`, html });
 }
 
 // 2. New Task Assigned
 export async function sendTaskAssignedEmail({ taskTitle, description, priority, dueDate, assignedByName, recipient }) {
-  const due = dueDate ? new Date(dueDate).toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' }) : 'No due date';
-  const priColor = { URGENT:'#f87171', HIGH:'#fb923c', MEDIUM:'#f5e642', LOW:ACCENT }[priority] || ACCENT;
+  const due = dueDate
+    ? new Date(dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+    : 'No due date';
+  const c = priColors(priority);
+
   const html = baseTemplate(`New Task: ${taskTitle}`, `
-    <h2 style="font-size:18px;font-weight:700;color:#fff;margin:0 0 6px;">${taskTitle}</h2>
-    <span style="display:inline-block;background:${priColor}20;color:${priColor};font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;border:1px solid ${priColor}44;margin-bottom:16px;">
-      ${priority}
+    <div style="margin-bottom:6px;">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#9ca3af;">New Task Assigned</span>
+    </div>
+    <h2 style="font-size:20px;font-weight:700;color:#111;margin:0 0 12px;">${taskTitle}</h2>
+
+    <span style="display:inline-block;background:${c.bg};color:${c.text};font-size:11px;font-weight:700;
+      padding:4px 12px;border-radius:999px;border:1px solid ${c.border};margin-bottom:20px;text-transform:uppercase;letter-spacing:0.5px;">
+      ${priority || 'MEDIUM'} PRIORITY
     </span>
-    ${description ? `<p style="font-size:14px;color:#d1d5db;line-height:1.6;margin:0 0 16px;">${description}</p>` : ''}
-    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-      <tr>
-        <td style="padding:8px 12px;background:#0a0a0a;border-radius:8px 0 0 8px;font-size:12px;color:#6b7280;width:40%;">Assigned by</td>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:#fff;font-weight:600;">${assignedByName}</td>
-      </tr>
-      <tr><td colspan="2" style="height:4px;"></td></tr>
-      <tr>
-        <td style="padding:8px 12px;background:#0a0a0a;border-radius:8px 0 0 8px;font-size:12px;color:#6b7280;">Due Date</td>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:${ACCENT};font-weight:600;">${due}</td>
-      </tr>
+
+    ${description ? `
+    <p style="font-size:14px;color:#374151;line-height:1.7;margin:0 0 20px;
+      background:#f9fafb;padding:14px;border-radius:8px;border:1px solid #e5e7eb;">${description}</p>
+    ` : ''}
+
+    <table style="width:100%;border-collapse:separate;border-spacing:0;margin-bottom:24px;">
+      ${infoRow('Assigned by', assignedByName, '#111')}
+      ${infoRow('Due Date', due, c.text)}
     </table>
-    <p style="font-size:12px;color:#6b7280;margin:0;">Login to <strong style="color:#9ca3af">WorkSyne</strong> to view and update your task.</p>
+
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px;">
+      <p style="font-size:13px;color:#166534;margin:0;">
+        🔔 Login to <strong>WorkSyne</strong> to view and update your task.
+      </p>
+    </div>
   `);
-  await sendMail({ to: recipient, subject: `New Task Assigned: ${taskTitle}`, html });
+
+  await sendMail({ to: recipient, subject: `New Task: ${taskTitle}`, html });
 }
 
-// 3. Task Completed
+// 3. Task Completed (notify admins/founders)
 export async function sendTaskCompletedEmail({ taskTitle, completedByName, department, completedAt, recipients }) {
-  const time = new Date(completedAt).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+  const time = new Date(completedAt).toLocaleString('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+
   const html = baseTemplate(`Task Completed: ${taskTitle}`, `
-    <div style="text-align:center;margin-bottom:24px;">
-      <div style="font-size:48px;margin-bottom:8px;">✅</div>
-      <h2 style="font-size:18px;font-weight:700;color:${ACCENT};margin:0;">${taskTitle}</h2>
-      <p style="font-size:13px;color:#9ca3af;margin:4px 0 0;">has been completed</p>
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="font-size:52px;margin-bottom:10px;">✅</div>
+      <h2 style="font-size:20px;font-weight:700;color:#16a34a;margin:0;">${taskTitle}</h2>
+      <p style="font-size:13px;color:#6b7280;margin:6px 0 0;">has been marked as completed</p>
     </div>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-      <tr>
-        <td style="padding:8px 12px;background:#0a0a0a;border-radius:8px 0 0 8px;font-size:12px;color:#6b7280;width:40%;">Completed by</td>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:#fff;font-weight:600;">${completedByName}</td>
-      </tr>
-      <tr><td colspan="2" style="height:4px;"></td></tr>
-      <tr>
-        <td style="padding:8px 12px;background:#0a0a0a;border-radius:8px 0 0 8px;font-size:12px;color:#6b7280;">Department</td>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:#9ca3af;">${department}</td>
-      </tr>
-      <tr><td colspan="2" style="height:4px;"></td></tr>
-      <tr>
-        <td style="padding:8px 12px;background:#0a0a0a;border-radius:8px 0 0 8px;font-size:12px;color:#6b7280;">Completed at</td>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:${ACCENT};">${time}</td>
-      </tr>
+
+    <table style="width:100%;border-collapse:separate;border-spacing:0;margin-bottom:20px;">
+      ${infoRow('Completed by', completedByName, '#111')}
+      ${infoRow('Department', department, '#374151')}
+      ${infoRow('Completed at', time, '#16a34a')}
     </table>
-    <p style="font-size:12px;color:#6b7280;margin:0;">Login to <strong style="color:#9ca3af">WorkSyne</strong> to view the task details.</p>
   `);
-  await sendMail({ to: recipients, subject: `✅ Task Completed: ${taskTitle} by ${completedByName}`, html });
+
+  await sendMail({ to: recipients, subject: `✅ Task Completed: ${taskTitle}`, html });
 }
 
 // 4. Founder shares a task
 export async function sendFounderTaskSharedEmail({ taskTitle, description, priority, dueDate, sharedByName, note, recipient }) {
-  const due = dueDate ? new Date(dueDate).toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' }) : 'No due date';
-  const priColor = { URGENT:'#f87171', HIGH:'#fb923c', MEDIUM:'#f5e642', LOW:ACCENT }[priority] || ACCENT;
-  const html = baseTemplate(`Task Shared With You: ${taskTitle}`, `
-    <h2 style="font-size:18px;font-weight:700;color:#fff;margin:0 0 6px;">${taskTitle}</h2>
-    <span style="display:inline-block;background:${priColor}20;color:${priColor};font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;border:1px solid ${priColor}44;margin-bottom:16px;">
-      ${priority}
+  const due = dueDate
+    ? new Date(dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+    : 'No due date';
+  const c = priColors(priority);
+
+  const html = baseTemplate(`Task Shared: ${taskTitle}`, `
+    <div style="margin-bottom:6px;">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#9ca3af;">Task Shared With You</span>
+    </div>
+    <h2 style="font-size:20px;font-weight:700;color:#111;margin:0 0 12px;">${taskTitle}</h2>
+
+    <span style="display:inline-block;background:${c.bg};color:${c.text};font-size:11px;font-weight:700;
+      padding:4px 12px;border-radius:999px;border:1px solid ${c.border};margin-bottom:20px;text-transform:uppercase;letter-spacing:0.5px;">
+      ${priority || 'MEDIUM'} PRIORITY
     </span>
-    ${description ? `<p style="font-size:14px;color:#d1d5db;line-height:1.6;margin:0 0 16px;">${description}</p>` : ''}
-    ${note ? `<div style="background:rgba(57,255,20,0.05);border-left:3px solid ${ACCENT};padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:16px;">
-      <p style="font-size:12px;color:#6b7280;margin:0 0 4px;">Note from ${sharedByName}:</p>
-      <p style="font-size:13px;color:#d1d5db;margin:0;">${note}</p>
+
+    ${description ? `
+    <p style="font-size:14px;color:#374151;line-height:1.7;margin:0 0 20px;
+      background:#f9fafb;padding:14px;border-radius:8px;border:1px solid #e5e7eb;">${description}</p>
+    ` : ''}
+
+    ${note ? `
+    <div style="background:#fffbeb;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:20px;">
+      <p style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 5px;">
+        Note from ${sharedByName}
+      </p>
+      <p style="font-size:13px;color:#374151;margin:0;">${note}</p>
     </div>` : ''}
-    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-      <tr>
-        <td style="padding:8px 12px;background:#0a0a0a;border-radius:8px 0 0 8px;font-size:12px;color:#6b7280;width:40%;">Shared by</td>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:#fff;font-weight:600;">${sharedByName}</td>
-      </tr>
-      <tr><td colspan="2" style="height:4px;"></td></tr>
-      <tr>
-        <td style="padding:8px 12px;background:#0a0a0a;border-radius:8px 0 0 8px;font-size:12px;color:#6b7280;">Due Date</td>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:${ACCENT};font-weight:600;">${due}</td>
-      </tr>
+
+    <table style="width:100%;border-collapse:separate;border-spacing:0;margin-bottom:24px;">
+      ${infoRow('Shared by', sharedByName, '#111')}
+      ${infoRow('Due Date', due, c.text)}
     </table>
-    <p style="font-size:12px;color:#6b7280;margin:0;">Login to <strong style="color:#9ca3af">WorkSyne</strong> to view this task.</p>
+
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px;">
+      <p style="font-size:13px;color:#166534;margin:0;">
+        🔔 Login to <strong>WorkSyne</strong> to view this task.
+      </p>
+    </div>
   `);
-  await sendMail({ to: recipient, subject: `Task Shared: ${taskTitle} (from ${sharedByName})`, html });
+
+  await sendMail({ to: recipient, subject: `Task Shared: ${taskTitle}`, html });
 }
 
 // 5. Welcome email for new employee
 export async function sendWelcomeEmail({ name, email, employeeId, department, designation, role }) {
   const html = baseTemplate(`Welcome to ${COMPANY}`, `
-    <div style="text-align:center;margin-bottom:24px;">
-      <div style="font-size:48px;margin-bottom:8px;">👋</div>
-      <h2 style="font-size:20px;font-weight:700;color:#fff;margin:0;">Welcome, ${name}!</h2>
-      <p style="font-size:13px;color:#9ca3af;margin:4px 0 0;">Your WorkSyne account is ready</p>
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="font-size:52px;margin-bottom:10px;">👋</div>
+      <h2 style="font-size:22px;font-weight:700;color:#111;margin:0;">Welcome, ${name}!</h2>
+      <p style="font-size:13px;color:#6b7280;margin:6px 0 0;">Your WorkSyne account is ready</p>
     </div>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-      ${[['Email', email], ['Employee ID', employeeId], ['Department', department], ['Designation', designation], ['Role', role]].map(([k,v]) => `
-      <tr>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:12px;color:#6b7280;width:40%;">${k}</td>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:#fff;font-weight:500;">${v}</td>
-      </tr>
-      <tr><td colspan="2" style="height:3px;"></td></tr>
-      `).join('')}
+
+    <table style="width:100%;border-collapse:separate;border-spacing:0;margin-bottom:24px;">
+      ${infoRow('Email', email, '#111')}
+      ${infoRow('Employee ID', employeeId, '#111')}
+      ${infoRow('Department', department, '#111')}
+      ${infoRow('Designation', designation, '#111')}
+      ${infoRow('Role', role, '#111')}
     </table>
-    <div style="background:rgba(57,255,20,0.05);border:1px solid rgba(57,255,20,0.2);border-radius:10px;padding:14px;margin-bottom:16px;">
-      <p style="font-size:13px;color:#9ca3af;margin:0 0 6px;">🔑 Default Password:</p>
-      <p style="font-size:18px;font-weight:700;color:${ACCENT};margin:0;letter-spacing:2px;">Welcome@123</p>
-      <p style="font-size:11px;color:#6b7280;margin:6px 0 0;">Please change your password after first login.</p>
+
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;margin-bottom:20px;">
+      <p style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 6px;">
+        🔑 Default Password
+      </p>
+      <p style="font-size:24px;font-weight:800;color:#d97706;margin:0;letter-spacing:4px;">Welcome@123</p>
+      <p style="font-size:11px;color:#b45309;margin:8px 0 0;">Please change your password after your first login.</p>
     </div>
-    <p style="font-size:12px;color:#6b7280;margin:0;">Contact your admin if you have any questions.</p>
+
+    <p style="font-size:12px;color:#9ca3af;margin:0;">Contact your admin if you have any questions.</p>
   `);
-  await sendMail({ to: email, subject: `Welcome to ${COMPANY} - Your WorkSyne Account`, html });
+
+  await sendMail({ to: email, subject: `Welcome to ${COMPANY} - Your Account is Ready`, html });
 }
 
 // 6. Added to a team
 export async function sendTeamWelcomeEmail({ memberName, memberEmail, teamName, teamDepartment, leadName, addedByName }) {
-  const html = baseTemplate(`You've been added to Team: ${teamName}`, `
-    <div style="text-align:center;margin-bottom:24px;">
-      <div style="font-size:48px;margin-bottom:8px;">👥</div>
-      <h2 style="font-size:20px;font-weight:700;color:#fff;margin:0;">You're in, ${memberName}!</h2>
-      <p style="font-size:13px;color:#9ca3af;margin:4px 0 0;">You've been added to a new team</p>
+  const html = baseTemplate(`Added to Team: ${teamName}`, `
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="font-size:52px;margin-bottom:10px;">👥</div>
+      <h2 style="font-size:20px;font-weight:700;color:#111;margin:0;">You're in, ${memberName}!</h2>
+      <p style="font-size:13px;color:#6b7280;margin:6px 0 0;">You've been added to a new team</p>
     </div>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-      <tr>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:12px;color:#6b7280;width:40%;">Team</td>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:#fff;font-weight:600;">${teamName}</td>
-      </tr>
-      <tr><td colspan="2" style="height:3px;"></td></tr>
-      <tr>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:12px;color:#6b7280;">Department</td>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:#9ca3af;">${teamDepartment}</td>
-      </tr>
-      <tr><td colspan="2" style="height:3px;"></td></tr>
-      ${leadName ? `<tr>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:12px;color:#6b7280;">Team Lead</td>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:${ACCENT};font-weight:600;">${leadName}</td>
-      </tr>
-      <tr><td colspan="2" style="height:3px;"></td></tr>` : ''}
-      <tr>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:12px;color:#6b7280;">Added by</td>
-        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:#9ca3af;">${addedByName}</td>
-      </tr>
+
+    <table style="width:100%;border-collapse:separate;border-spacing:0;margin-bottom:24px;">
+      ${infoRow('Team', teamName, '#111')}
+      ${infoRow('Department', teamDepartment, '#374151')}
+      ${leadName ? infoRow('Team Lead', leadName, '#16a34a') : ''}
+      ${infoRow('Added by', addedByName, '#374151')}
     </table>
-    <p style="font-size:12px;color:#6b7280;margin:0;">Login to <strong style="color:#9ca3af">WorkSyne</strong> to see your team details.</p>
+
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px;">
+      <p style="font-size:13px;color:#166534;margin:0;">
+        🔔 Login to <strong>WorkSyne</strong> to see your team details.
+      </p>
+    </div>
   `);
+
   await sendMail({ to: memberEmail, subject: `You've been added to Team: ${teamName}`, html });
 }
