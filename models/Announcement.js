@@ -5,6 +5,7 @@ const announcementSchema = new mongoose.Schema({
   body:       { type: String, required: true },
   targetDept: { type: String, default: null },
   pinned:     { type: Boolean, default: false },
+  priority:   { type: String, enum: ['GENERAL', 'HIGH', 'URGENT'], default: 'GENERAL' },
   publishAt:  { type: Date, default: Date.now },
   expiresAt:  { type: Date, default: null },
   readBy:     [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],

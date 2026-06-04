@@ -4,6 +4,7 @@ import User from '../models/User.js';
 import Team from '../models/Team.js';
 import { departments } from '../db.js';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
+import { sendTaskAssignedEmail, sendTaskCompletedEmail } from '../services/email.js';
 
 const router = express.Router();
 
@@ -115,6 +116,23 @@ router.post('/', authMiddleware, async (req, res) => {
   });
 
   if (req.app.get('io')) req.app.get('io').emit('task:created', task);
+
+  // Send email to each assigned employee (fire and forget)
+  User.find({ _id: { $in: finalAssignedTo } }).select('email name').lean().then(assignees => {
+    assignees.forEach(u => {
+      if (u.email) {
+        sendTaskAssignedEmail({
+          taskTitle:      title,
+          description:    description || '',
+          priority:       priority || 'MEDIUM',
+          dueDate:        dueDate || null,
+          assignedByName: req.user.name,
+          recipient:      u.email,
+        });
+      }
+    });
+  }).catch(e => console.error('Task assign email error:', e.message));
+
   res.status(201).json(task);
 });
 
@@ -132,15 +150,30 @@ router.patch('/:id', authMiddleware, async (req, res) => {
   const io = req.app.get('io');
   if (io) {
     io.emit('task:updated', task);
-    // Notify admin when employee marks task as DONE
+    // Notify admin + founders when employee marks task as DONE
     if (req.user.role === 'EMPLOYEE' && req.body.status === 'DONE' && prevStatus !== 'DONE') {
+      const completedAt = new Date();
       io.emit('task:completed', {
-        taskId:       task._id,
-        taskTitle:    task.title,
-        completedBy:  req.user.name,
-        department:   req.user.department,
-        completedAt:  new Date(),
+        taskId:      task._id,
+        taskTitle:   task.title,
+        completedBy: req.user.name,
+        department:  req.user.department,
+        completedAt,
       });
+      // Email to founders + admins
+      User.find({ role: { $in: ['ADMIN', 'FOUNDER'] }, isActive: true }).select('email').lean()
+        .then(leaders => {
+          const emails = leaders.map(u => u.email).filter(Boolean);
+          if (emails.length > 0) {
+            sendTaskCompletedEmail({
+              taskTitle:       task.title,
+              completedByName: req.user.name,
+              department:      req.user.department,
+              completedAt,
+              recipients:      emails,
+            });
+          }
+        }).catch(e => console.error('Task complete email error:', e.message));
     }
   }
   res.json(task);

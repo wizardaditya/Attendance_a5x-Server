@@ -4,6 +4,11 @@ import User        from '../models/User.js';
 import Attendance  from '../models/Attendance.js';
 import Task        from '../models/Task.js';
 import { authMiddleware, adminOrFounder } from '../middleware/auth.js';
+import {
+  sendTaskAssignedEmail,
+  sendTaskCompletedEmail,
+  sendFounderTaskSharedEmail,
+} from '../services/email.js';
 
 const router  = express.Router();
 const todayStr = () => new Date().toISOString().split('T')[0];
@@ -127,7 +132,29 @@ router.patch('/tasks/:id', authMiddleware, adminOrFounder, async (req, res) => {
     if (dueDate     !== undefined) task.dueDate     = dueDate ? new Date(dueDate) : null;
     if (tags        !== undefined) task.tags        = tags;
     if (note        !== undefined) task.note        = note;
+
+    const prevStatus = task.status;
     await task.save();
+
+    // Notify all founders + admins when a founder marks task as DONE
+    if (status === 'DONE' && prevStatus !== 'DONE') {
+      const completedAt = new Date();
+      User.find({ role: { $in: ['ADMIN', 'FOUNDER'] }, isActive: true })
+        .select('email').lean()
+        .then(leaders => {
+          const emails = leaders.map(u => u.email).filter(Boolean);
+          if (emails.length > 0) {
+            sendTaskCompletedEmail({
+              taskTitle:       task.title,
+              completedByName: req.user.name,
+              department:      req.user.designation || 'Founder',
+              completedAt,
+              recipients:      emails,
+            });
+          }
+        }).catch(e => console.error('Founder task complete email error:', e.message));
+    }
+
     const populated = await populateTask(task._id);
     res.json({ ...populated, id: populated._id.toString(), _id: populated._id.toString() });
   } catch (err) {
@@ -169,6 +196,20 @@ router.post('/tasks/:id/share', authMiddleware, adminOrFounder, async (req, res)
       if (!task.sharedWith.map(id => id.toString()).includes(targetId))
         task.sharedWith.push(targetId);
       if (assignedTo) task.assignedTo = targetId;
+
+      // Email the founder being shared with
+      if (target.email) {
+        sendFounderTaskSharedEmail({
+          taskTitle:    task.title,
+          description:  task.description,
+          priority:     task.priority,
+          dueDate:      task.dueDate,
+          sharedByName: req.user.name,
+          note:         note || '',
+          recipient:    target.email,
+          shareType:    'founder',
+        }).catch(e => console.error('Founder share email error:', e.message));
+      }
     } else {
       // Assign to employee - create a regular Task
       const newEmployeeTask = await Task.create({
@@ -186,6 +227,18 @@ router.post('/tasks/:id/share', authMiddleware, adminOrFounder, async (req, res)
       task.employeeAssignees.push(targetId);
       task.employeeTaskId = newEmployeeTask._id;
       req.app.get('io')?.emit('task:created', newEmployeeTask);
+
+      // Email the assigned employee
+      if (target.email) {
+        sendTaskAssignedEmail({
+          taskTitle:      task.title,
+          description:    `${task.description || ''}${note ? `\n\nNote from ${req.user.name}: ${note}` : ''}`.trim(),
+          priority:       task.priority,
+          dueDate:        task.dueDate,
+          assignedByName: req.user.name,
+          recipient:      target.email,
+        }).catch(e => console.error('Employee task email error:', e.message));
+      }
     }
 
     if (note) task.note = note;

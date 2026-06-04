@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
 import { departments } from '../db.js';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
+import { sendWelcomeEmail } from '../services/email.js';
 
 const router = express.Router();
 
