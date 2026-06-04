@@ -10,11 +10,10 @@ router.get('/', authMiddleware, async (req, res) => {
   try {
     const now = new Date();
     const filtered = req.user.role === 'ADMIN' || req.user.role === 'FOUNDER'
-      ? await Announcement.find().sort({ pinned: -1, publishAt: -1 })
+      ? await Announcement.find().sort({ pinned: -1, createdAt: -1 })
       : await Announcement.find({
-          publishAt: { $lte: now },
           $or: [{ targetDept: null }, { targetDept: req.user.department }],
-        }).sort({ pinned: -1, publishAt: -1 });
+        }).sort({ pinned: -1, createdAt: -1 });
     res.json(filtered);
   } catch (err) {
     res.status(500).json({ error: 'Failed to load announcements' });
@@ -31,8 +30,8 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
       targetDept: targetDept || null,
       pinned:     pinned  || false,
       priority:   priority || 'GENERAL',
-      publishAt:  publishAt ? new Date(publishAt) : new Date(),
-      expiresAt:  expiresAt ? new Date(expiresAt) : null,
+      publishAt:  new Date(), // always now — no scheduling
+      expiresAt:  null,       // no expiry
       createdBy:  req.user._id,
     });
 
