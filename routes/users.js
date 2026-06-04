@@ -103,6 +103,17 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
       isActive:    true,
     });
     const { password: _, ...safeUser } = user.toObject();
+
+    // Send welcome email (fire and forget)
+    sendWelcomeEmail({
+      name:        user.name,
+      email:       user.email,
+      employeeId:  user.employeeId,
+      department:  user.department,
+      designation: user.designation,
+      role:        user.role,
+    }).catch(e => console.error('Welcome email error:', e.message));
+
     res.status(201).json(safeUser);
   } catch (err) {
     if (err.code === 11000) {

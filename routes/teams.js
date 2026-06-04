@@ -2,6 +2,7 @@ import express from 'express';
 import Team from '../models/Team.js';
 import User from '../models/User.js';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
+import { sendTeamWelcomeEmail } from '../services/email.js';
 
 const router = express.Router();
 
@@ -76,6 +77,24 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
 
     const obj = populated.toObject();
     if (req.app.get('io')) req.app.get('io').emit('team:created', { teamId: obj._id.toString(), name: obj.name });
+
+    // Email all members about being added to the team
+    const leadName = obj.lead?.name || null;
+    if (obj.members?.length > 0) {
+      obj.members.forEach(m => {
+        if (m.email) {
+          sendTeamWelcomeEmail({
+            memberName:     m.name,
+            memberEmail:    m.email,
+            teamName:       obj.name,
+            teamDepartment: obj.department,
+            leadName,
+            addedByName:    req.user.name,
+          }).catch(e => console.error('Team welcome email error:', e.message));
+        }
+      });
+    }
+
     res.status(201).json({ ...obj, id: obj._id.toString(), _id: obj._id.toString() });
   } catch (err) {
     console.error('Create team error:', err.message);
@@ -88,6 +107,8 @@ router.patch('/:id', authMiddleware, adminOnly, async (req, res) => {
   try {
     const team = await Team.findById(req.params.id);
     if (!team) return res.status(404).json({ error: 'Team not found' });
+
+    const prevMemberIds = team.members.map(id => id.toString());
 
     const { name, department, description, color, members, lead, isActive } = req.body;
     if (name        !== undefined) team.name        = name;
@@ -106,6 +127,25 @@ router.patch('/:id', authMiddleware, adminOnly, async (req, res) => {
 
     const obj = populated.toObject();
     if (req.app.get('io')) req.app.get('io').emit('team:updated', { teamId: obj._id.toString() });
+
+    // Email only newly added members
+    if (members && obj.members?.length > 0) {
+      const leadName = obj.lead?.name || null;
+      obj.members.forEach(m => {
+        const mid = m._id?.toString() || m.id?.toString();
+        if (!prevMemberIds.includes(mid) && m.email) {
+          sendTeamWelcomeEmail({
+            memberName:     m.name,
+            memberEmail:    m.email,
+            teamName:       obj.name,
+            teamDepartment: obj.department,
+            leadName,
+            addedByName:    req.user.name,
+          }).catch(e => console.error('Team member email error:', e.message));
+        }
+      });
+    }
+
     res.json({ ...obj, id: obj._id.toString(), _id: obj._id.toString() });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update team' });

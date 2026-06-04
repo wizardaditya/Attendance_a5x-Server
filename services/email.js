@@ -1,22 +1,18 @@
 import nodemailer from 'nodemailer';
 
-// ── Transporter setup ────────────────────────────────────────────────────────
-let transporter = null;
-
+// ── Transporter setup — recreated fresh every call so env vars are always read ──
 function getTransporter() {
-  if (transporter) return transporter;
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
     console.warn('⚠️  Email not configured - EMAIL_USER or EMAIL_PASS missing');
     return null;
   }
-  transporter = nodemailer.createTransport({
+  return nodemailer.createTransport({
     service: 'gmail',
     auth: {
       user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS, // Gmail App Password
+      pass: process.env.EMAIL_PASS,
     },
   });
-  return transporter;
 }
 
 const COMPANY  = process.env.COMPANY_NAME || 'A5X Industries';
@@ -217,4 +213,38 @@ export async function sendWelcomeEmail({ name, email, employeeId, department, de
     <p style="font-size:12px;color:#6b7280;margin:0;">Contact your admin if you have any questions.</p>
   `);
   await sendMail({ to: email, subject: `Welcome to ${COMPANY} - Your WorkSyne Account`, html });
+}
+
+// 6. Added to a team
+export async function sendTeamWelcomeEmail({ memberName, memberEmail, teamName, teamDepartment, leadName, addedByName }) {
+  const html = baseTemplate(`You've been added to Team: ${teamName}`, `
+    <div style="text-align:center;margin-bottom:24px;">
+      <div style="font-size:48px;margin-bottom:8px;">👥</div>
+      <h2 style="font-size:20px;font-weight:700;color:#fff;margin:0;">You're in, ${memberName}!</h2>
+      <p style="font-size:13px;color:#9ca3af;margin:4px 0 0;">You've been added to a new team</p>
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+      <tr>
+        <td style="padding:8px 12px;background:#0a0a0a;font-size:12px;color:#6b7280;width:40%;">Team</td>
+        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:#fff;font-weight:600;">${teamName}</td>
+      </tr>
+      <tr><td colspan="2" style="height:3px;"></td></tr>
+      <tr>
+        <td style="padding:8px 12px;background:#0a0a0a;font-size:12px;color:#6b7280;">Department</td>
+        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:#9ca3af;">${teamDepartment}</td>
+      </tr>
+      <tr><td colspan="2" style="height:3px;"></td></tr>
+      ${leadName ? `<tr>
+        <td style="padding:8px 12px;background:#0a0a0a;font-size:12px;color:#6b7280;">Team Lead</td>
+        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:${ACCENT};font-weight:600;">${leadName}</td>
+      </tr>
+      <tr><td colspan="2" style="height:3px;"></td></tr>` : ''}
+      <tr>
+        <td style="padding:8px 12px;background:#0a0a0a;font-size:12px;color:#6b7280;">Added by</td>
+        <td style="padding:8px 12px;background:#0a0a0a;font-size:13px;color:#9ca3af;">${addedByName}</td>
+      </tr>
+    </table>
+    <p style="font-size:12px;color:#6b7280;margin:0;">Login to <strong style="color:#9ca3af">WorkSyne</strong> to see your team details.</p>
+  `);
+  await sendMail({ to: memberEmail, subject: `You've been added to Team: ${teamName}`, html });
 }
