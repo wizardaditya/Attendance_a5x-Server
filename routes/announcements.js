@@ -39,6 +39,7 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
     if (req.app.get('io')) req.app.get('io').emit('announcement:new', ann);
 
     // Send email to all relevant users (fire and forget)
+    // Email is sent immediately on creation regardless of publishAt schedule
     const filter = { isActive: true };
     if (targetDept) filter.department = targetDept;
     User.find(filter).select('email').lean().then(users => {
