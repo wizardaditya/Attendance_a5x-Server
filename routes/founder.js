@@ -318,4 +318,16 @@ router.get('/all-users', authMiddleware, adminOrFounder, async (req, res) => {
   }
 });
 
+// List all founders (for task sharing UI)
+router.get('/founders', authMiddleware, adminOrFounder, async (req, res) => {
+  try {
+    const founders = await User.find({ isActive: true, role: 'FOUNDER' })
+      .select('name email designation department role')
+      .lean();
+    res.json(founders.map(u => ({ ...u, id: u._id.toString(), _id: u._id.toString() })));
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load founders' });
+  }
+});
+
 export default router;
