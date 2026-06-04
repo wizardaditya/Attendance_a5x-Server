@@ -102,6 +102,37 @@ router.get('/tasks', authMiddleware, adminOrFounder, async (req, res) => {
   }
 });
 
+// GET all shared tasks (for Team Tasks tab) — only tasks that were shared
+router.get('/tasks/shared', authMiddleware, adminOrFounder, async (req, res) => {
+  try {
+    const tasks = await FounderTask.find({ isShared: true })
+      .populate('createdBy',  'name designation')
+      .populate('sharedWith', 'name designation')
+      .populate('assignedTo', 'name designation')
+      .sort({ updatedAt: -1 })
+      .lean();
+    res.json(tasks.map(t => ({ ...t, id: t._id.toString(), _id: t._id.toString() })));
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load shared tasks' });
+  }
+});
+
+// GET tasks by a specific founder (for clicking on founder in Team Pulse)
+router.get('/tasks/by-founder/:founderId', authMiddleware, adminOrFounder, async (req, res) => {
+  try {
+    const fid = req.params.founderId;
+    const tasks = await FounderTask.find({ createdBy: fid })
+      .populate('createdBy',  'name designation')
+      .populate('sharedWith', 'name')
+      .populate('assignedTo', 'name')
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json(tasks.map(t => ({ ...t, id: t._id.toString(), _id: t._id.toString() })));
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load founder tasks' });
+  }
+});
+
 // Create task
 router.post('/tasks', authMiddleware, adminOrFounder, async (req, res) => {
   try {
