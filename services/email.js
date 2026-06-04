@@ -1,5 +1,5 @@
-// import nodemailer from 'nodemailer';  // commented out — using Resend only
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
+// import { Resend } from 'resend';  // kept for reference, using Nodemailer (Gmail SMTP)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
@@ -9,43 +9,49 @@ const APP_NAME = 'WorkSyne';
 const ACCENT   = '#39ff14';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RESEND CLIENT
+// NODEMAILER — Gmail SMTP (works for ANY recipient, no verification needed)
+// .env: SMTP_USER=your@gmail.com  SMTP_PASS=app-password-16-digits
 // ─────────────────────────────────────────────────────────────────────────────
-let _resend = null;
-function getResend() {
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('⚠️  Email skipped — RESEND_API_KEY not configured in .env');
+let _transporter = null;
+function getTransporter() {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn('⚠️  Email skipped — SMTP_USER or SMTP_PASS missing in .env');
     return null;
   }
-  if (_resend) return _resend;
-  _resend = new Resend(process.env.RESEND_API_KEY);
-  return _resend;
+  if (_transporter) return _transporter;
+  _transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+  return _transporter;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GENERIC SEND HELPER
 // ─────────────────────────────────────────────────────────────────────────────
 async function sendMail({ to, subject, html }) {
-  const resend = getResend();
-  if (!resend) return;
+  const transporter = getTransporter();
+  if (!transporter) return;
 
   const recipients = Array.isArray(to) ? to : [to];
   const filtered   = recipients.filter(Boolean);
   if (filtered.length === 0) return;
 
-  const from     = process.env.EMAIL_FROM || 'onboarding@resend.dev';
   const fromName = `${APP_NAME} · ${COMPANY}`;
 
   try {
-    await resend.emails.send({
-      from:    `${fromName} <${from}>`,
-      to:      filtered,
+    await transporter.sendMail({
+      from:    `"${fromName}" <${process.env.SMTP_USER}>`,
+      to:      filtered.join(', '),
       subject: `[${APP_NAME}] ${subject}`,
       html,
     });
-    console.log(`📧 [Resend] Sent: "${subject}" → ${filtered.join(', ')}`);
+    console.log(`📧 [Gmail] Sent: "${subject}" → ${filtered.join(', ')}`);
   } catch (err) {
-    console.error('📧 [Resend] Failed:', err.message);
+    console.error('📧 [Gmail] Failed:', err.message);
   }
 }
 
