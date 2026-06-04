@@ -38,8 +38,8 @@ function localTimeToUTC(timeStr, timezone) {
 }
 
 async function generateAutoQR(type, location, expiresAt, io) {
-  // Deactivate existing auto QR of same type
-  await QRCode.updateMany({ isAuto: true, type, isActive: true }, { isActive: false });
+  // Hard delete existing auto QR of same type (only one at a time)
+  await QRCode.deleteMany({ isAuto: true, type });
 
   const qr = await QRCode.create({
     location,
@@ -52,7 +52,6 @@ async function generateAutoQR(type, location, expiresAt, io) {
 
   const token     = generateQRToken(qr._id.toString(), location);
   const url       = `${CLIENT_URL()}/checkin?token=${token}&type=${type.toLowerCase()}`;
-  const color     = type === 'CHECKIN' ? '#22c55e' : '#3b82f6';
   const qrDataUrl = await QRCode_lib.toDataURL(url, {
     width: 400, margin: 2,
     color: { dark: '#000000', light: '#FFFFFF' },
@@ -64,17 +63,14 @@ async function generateAutoQR(type, location, expiresAt, io) {
   await qr.save();
 
   console.log(`✅ Auto ${type} QR generated for ${location}, expires at ${expiresAt.toISOString()}`);
-
-  // Notify frontend via socket
   if (io) io.emit('qr:auto-generated', { type, qrId: qr._id.toString(), location, expiresAt });
-
   return qr;
 }
 
-async function deactivateAutoQR(type, io) {
-  const result = await QRCode.updateMany({ isAuto: true, type, isActive: true }, { isActive: false });
-  if (result.modifiedCount > 0) {
-    console.log(`🔕 Auto ${type} QR deactivated`);
+async function deleteAutoQR(type, io) {
+  const result = await QRCode.deleteMany({ isAuto: true, type });
+  if (result.deletedCount > 0) {
+    console.log(`🗑 Auto ${type} QR deleted (expired)`);
     if (io) io.emit('qr:auto-deactivated', { type });
   }
 }
@@ -131,18 +127,14 @@ export function startQRScheduler(io) {
 
       // --- CHECKIN QR ---
       if (nowMinutes >= checkinOpenMinutes && nowMinutes < checkinCloseMinutes) {
-        // Should be active
         if (generated.CHECKIN !== todayKey) {
           generated.CHECKIN = todayKey;
-          const expiresAt = new Date();
-          // Set expiry to checkin close time today in UTC
           const expLocal = `${todayStr}T${checkinCloseStr}:00`;
-          const expiresAtLocal = new Date(expLocal);
-          await generateAutoQR('CHECKIN', location, expiresAtLocal, io);
+          await generateAutoQR('CHECKIN', location, new Date(expLocal), io);
         }
       } else if (nowMinutes >= checkinCloseMinutes) {
-        // Should be deactivated
-        await deactivateAutoQR('CHECKIN', io);
+        generated.CHECKIN = null; // reset so it can regenerate next day
+        await deleteAutoQR('CHECKIN', io);
       }
 
       // --- CHECKOUT QR ---
@@ -150,12 +142,17 @@ export function startQRScheduler(io) {
         if (generated.CHECKOUT !== todayKey) {
           generated.CHECKOUT = todayKey;
           const expLocal = `${todayStr}T${checkoutCloseStr}:00`;
-          const expiresAtLocal = new Date(expLocal);
-          await generateAutoQR('CHECKOUT', location, expiresAtLocal, io);
+          await generateAutoQR('CHECKOUT', location, new Date(expLocal), io);
         }
       } else if (nowMinutes >= checkoutCloseMinutes) {
-        await deactivateAutoQR('CHECKOUT', io);
+        generated.CHECKOUT = null; // reset so it can regenerate next day
+        await deleteAutoQR('CHECKOUT', io);
       }
+
+      // Also delete any expired manual QRs
+      const expired = await QRCode.deleteMany({ expiresAt: { $lt: new Date() } });
+      if (expired.deletedCount > 0)
+        console.log(`🗑 Deleted ${expired.deletedCount} expired QR(s)`);
 
     } catch (err) {
       console.error('QR Scheduler error:', err.message);
