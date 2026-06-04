@@ -3,6 +3,7 @@ import Announcement from '../models/Announcement.js';
 import User         from '../models/User.js';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
 import { sendAnnouncementEmail } from '../services/email.js';
+import { sendPushToUsers } from '../services/push.js';
 
 const router = express.Router();
 
@@ -37,12 +38,21 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
 
     if (req.app.get('io')) req.app.get('io').emit('announcement:new', ann);
 
-    // Send email to all relevant users (fire and forget)
-    // Email is sent immediately on creation regardless of publishAt schedule
+    // Send push + email to all relevant users
     const filter = { isActive: true };
     if (targetDept) filter.department = targetDept;
-    User.find(filter).select('email').lean().then(users => {
+    User.find(filter).select('email _id').lean().then(users => {
       const emails = users.map(u => u.email).filter(Boolean);
+      const ids    = users.map(u => u._id);
+
+      // Web Push notification (instant popup)
+      sendPushToUsers(ids, {
+        title: `📢 ${title}`,
+        body:  body.length > 80 ? body.slice(0, 80) + '…' : body,
+        url:   '/employee',
+      }).catch(e => console.error('Announcement push error:', e.message));
+
+      // Email
       if (emails.length > 0) {
         sendAnnouncementEmail({
           title, body,
@@ -51,7 +61,7 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
           recipients:    emails,
         });
       }
-    }).catch(e => console.error('Announcement email error:', e.message));
+    }).catch(e => console.error('Announcement notify error:', e.message));
 
     res.status(201).json(ann);
   } catch (err) {

@@ -5,6 +5,7 @@ import Team from '../models/Team.js';
 import { departments } from '../db.js';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
 import { sendTaskAssignedEmail, sendTaskCompletedEmail } from '../services/email.js';
+import { sendPushToUsers, sendPushToAll } from '../services/push.js';
 
 const router = express.Router();
 
@@ -117,8 +118,18 @@ router.post('/', authMiddleware, async (req, res) => {
 
   if (req.app.get('io')) req.app.get('io').emit('task:created', task);
 
-  // Send email to each assigned employee (fire and forget)
+  // Send push + email to each assigned employee
   User.find({ _id: { $in: finalAssignedTo } }).select('email name').lean().then(assignees => {
+    const assigneeIds = assignees.map(u => u._id);
+
+    // Web Push notification
+    sendPushToUsers(assigneeIds, {
+      title: `📋 New Task: ${title}`,
+      body:  `Assigned by ${req.user.name} · Priority: ${priority || 'MEDIUM'}`,
+      url:   '/employee/tasks',
+    }).catch(e => console.error('Push error:', e.message));
+
+    // Email
     assignees.forEach(u => {
       if (u.email) {
         sendTaskAssignedEmail({
@@ -131,7 +142,7 @@ router.post('/', authMiddleware, async (req, res) => {
         });
       }
     });
-  }).catch(e => console.error('Task assign email error:', e.message));
+  }).catch(e => console.error('Task assign notify error:', e.message));
 
   res.status(201).json(task);
 });
@@ -161,9 +172,19 @@ router.patch('/:id', authMiddleware, async (req, res) => {
         completedAt,
       });
       // Email to founders + admins
-      User.find({ role: { $in: ['ADMIN', 'FOUNDER'] }, isActive: true }).select('email').lean()
+      User.find({ role: { $in: ['ADMIN', 'FOUNDER'] }, isActive: true }).select('email _id').lean()
         .then(leaders => {
           const emails = leaders.map(u => u.email).filter(Boolean);
+          const ids    = leaders.map(u => u._id);
+
+          // Push notification
+          sendPushToUsers(ids, {
+            title: `✅ Task Completed: ${task.title}`,
+            body:  `${req.user.name} (${req.user.department}) marked it done`,
+            url:   '/admin/tasks',
+          }).catch(e => console.error('Push error:', e.message));
+
+          // Email
           if (emails.length > 0) {
             sendTaskCompletedEmail({
               taskTitle:       task.title,
@@ -173,7 +194,7 @@ router.patch('/:id', authMiddleware, async (req, res) => {
               recipients:      emails,
             });
           }
-        }).catch(e => console.error('Task complete email error:', e.message));
+        }).catch(e => console.error('Task complete notify error:', e.message));
     }
   }
   res.json(task);
