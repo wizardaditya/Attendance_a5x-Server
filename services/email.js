@@ -1,5 +1,3 @@
-import axios from 'axios';
-
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,24 +26,27 @@ async function sendMail({ to, subject, html }) {
   const fromName  = `${APP_NAME} · ${COMPANY}`;
 
   try {
-    await axios.post(
-      'https://api.brevo.com/v3/smtp/email',
-      {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method:  'POST',
+      headers: {
+        'api-key':      apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
         sender:      { name: fromName, email: fromEmail },
         to:          filtered.map(email => ({ email })),
         subject:     `[${APP_NAME}] ${subject}`,
         htmlContent: html,
-      },
-      {
-        headers: {
-          'api-key':     apiKey,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-    console.log(`📧 [Brevo API] Sent: "${subject}" → ${filtered.join(', ')}`);
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('📧 [Brevo API] Failed:', err);
+    } else {
+      console.log(`📧 [Brevo API] Sent: "${subject}" → ${filtered.join(', ')}`);
+    }
   } catch (err) {
-    console.error('📧 [Brevo API] Failed:', err?.response?.data || err.message);
+    console.error('📧 [Brevo API] Failed:', err.message);
   }
 }
 
