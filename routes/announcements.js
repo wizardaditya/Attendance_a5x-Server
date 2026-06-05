@@ -41,27 +41,38 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
     // Send push + email to all relevant users
     const filter = { isActive: true };
     if (targetDept) filter.department = targetDept;
-    User.find(filter).select('email _id').lean().then(users => {
-      const emails = users.map(u => u.email).filter(Boolean);
-      const ids    = users.map(u => u._id);
 
-      // Web Push notification (instant popup)
-      sendPushToUsers(ids, {
-        title: `📢 ${title}`,
-        body:  body.length > 80 ? body.slice(0, 80) + '…' : body,
-        url:   '/employee',
-      }).catch(e => console.error('Announcement push error:', e.message));
+    // Fire and forget - run async after response
+    setImmediate(async () => {
+      try {
+        const users = await User.find(filter).select('email _id').lean();
+        const emails = users.map(u => u.email).filter(Boolean);
+        const ids    = users.map(u => u._id);
 
-      // Email
-      if (emails.length > 0) {
-        sendAnnouncementEmail({
-          title, body,
-          priority:      priority || 'GENERAL',
-          createdByName: req.user.name,
-          recipients:    emails,
-        });
+        console.log(`📢 Announcement: found ${users.length} users, ${emails.length} with emails`);
+
+        // Web Push notification (instant popup)
+        sendPushToUsers(ids, {
+          title: `📢 ${title}`,
+          body:  body.length > 80 ? body.slice(0, 80) + '…' : body,
+          url:   '/employee',
+        }).catch(e => console.error('Announcement push error:', e.message));
+
+        // Email
+        if (emails.length > 0) {
+          await sendAnnouncementEmail({
+            title, body,
+            priority:      priority || 'GENERAL',
+            createdByName: req.user.name,
+            recipients:    emails,
+          });
+        } else {
+          console.warn('📢 Announcement: no emails to send');
+        }
+      } catch (e) {
+        console.error('Announcement notify error:', e.message);
       }
-    }).catch(e => console.error('Announcement notify error:', e.message));
+    });
 
     res.status(201).json(ann);
   } catch (err) {
