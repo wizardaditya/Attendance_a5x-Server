@@ -111,7 +111,7 @@ app.get('/api/test-email', async (req, res) => {
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`\n🚀 WorkSyne Server → http://localhost:${PORT}\n`);
-  console.log(`📧 Email config: Brevo SMTP=${process.env.SMTP_USER ? '✅ ' + process.env.SMTP_USER : '❌ NOT SET'}`);
+  console.log(`📧 Email config: Brevo API=${process.env.BREVO_API_KEY ? '✅ SET' : '❌ NOT SET'}`);
 
   // Start QR auto-scheduler
   startQRScheduler(io);

@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import * as Brevo from '@getbrevo/brevo';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
@@ -8,51 +8,47 @@ const APP_NAME = 'WorkSyne';
 const ACCENT   = '#39ff14';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BREVO SMTP TRANSPORTER (works on Render free tier — port 587 not blocked)
+// BREVO HTTP API (works on Render — uses port 443, no SMTP port needed)
 // ─────────────────────────────────────────────────────────────────────────────
-let _transporter = null;
-function getTransporter() {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn('⚠️  Email skipped — SMTP_USER or SMTP_PASS missing in .env');
+let _brevoClient = null;
+function getBrevoClient() {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) {
+    console.warn('⚠️  Email skipped — BREVO_API_KEY missing in .env');
     return null;
   }
-  if (_transporter) return _transporter;
-  _transporter = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST || 'smtp-relay.brevo.com',
-    port:   parseInt(process.env.SMTP_PORT || '587'),
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
-  return _transporter;
+  if (_brevoClient) return _brevoClient;
+  const apiInstance = new Brevo.TransactionalEmailsApi();
+  apiInstance.authentications['api-key'].apiKey = apiKey;
+  _brevoClient = apiInstance;
+  return _brevoClient;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GENERIC SEND HELPER
 // ─────────────────────────────────────────────────────────────────────────────
 async function sendMail({ to, subject, html }) {
-  const transporter = getTransporter();
-  if (!transporter) return;
+  const client = getBrevoClient();
+  if (!client) return;
 
   const recipients = Array.isArray(to) ? to : [to];
   const filtered   = recipients.filter(Boolean);
   if (filtered.length === 0) return;
 
-  const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const fromEmail = process.env.SMTP_FROM || 'office.a5xindustries@gmail.com';
   const fromName  = `${APP_NAME} · ${COMPANY}`;
 
+  const sendSmtpEmail = new Brevo.SendSmtpEmail();
+  sendSmtpEmail.subject = `[${APP_NAME}] ${subject}`;
+  sendSmtpEmail.htmlContent = html;
+  sendSmtpEmail.sender = { name: fromName, email: fromEmail };
+  sendSmtpEmail.to = filtered.map(email => ({ email }));
+
   try {
-    await transporter.sendMail({
-      from:    `"${fromName}" <${fromEmail}>`,
-      to:      filtered.join(', '),
-      subject: `[${APP_NAME}] ${subject}`,
-      html,
-    });
-    console.log(`📧 [Brevo] Sent: "${subject}" → ${filtered.join(', ')}`);
+    await client.sendTransacEmail(sendSmtpEmail);
+    console.log(`📧 [Brevo API] Sent: "${subject}" → ${filtered.join(', ')}`);
   } catch (err) {
-    console.error('📧 [Brevo] Failed:', err.message);
+    console.error('📧 [Brevo API] Failed:', err?.response?.text || err.message);
   }
 }
 
