@@ -1,7 +1,7 @@
 import express from 'express';
 import Announcement from '../models/Announcement.js';
 import User         from '../models/User.js';
-import { authMiddleware, adminOnly } from '../middleware/auth.js';
+import { authMiddleware, adminOnly, adminOrFounder } from '../middleware/auth.js';
 import { sendAnnouncementEmail } from '../services/email.js';
 import { sendPushToUsers } from '../services/push.js';
 
@@ -21,7 +21,7 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-router.post('/', authMiddleware, adminOnly, async (req, res) => {
+router.post('/', authMiddleware, adminOrFounder, async (req, res) => {
   try {
     const { title, body, targetDept, pinned, publishAt, expiresAt, priority } = req.body;
     if (!title || !body) return res.status(400).json({ error: 'Title and body required' });
@@ -38,9 +38,13 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
 
     if (req.app.get('io')) req.app.get('io').emit('announcement:new', ann);
 
-    // Send push + email to all relevant users
-    const filter = { isActive: true };
-    if (targetDept) filter.department = targetDept;
+    // Send push + email based on who is posting
+    // ADMIN → all active users | FOUNDER → only founders
+    const isFounderPost = req.user.role === 'FOUNDER';
+    const filter = isFounderPost
+      ? { isActive: true, role: 'FOUNDER' }
+      : { isActive: true };
+    if (targetDept && !isFounderPost) filter.department = targetDept;
 
     // Fire and forget - run async after response
     setImmediate(async () => {
@@ -94,7 +98,7 @@ router.post('/:id/read', authMiddleware, async (req, res) => {
   }
 });
 
-router.delete('/:id', authMiddleware, adminOnly, async (req, res) => {
+router.delete('/:id', authMiddleware, adminOrFounder, async (req, res) => {
   try {
     const ann = await Announcement.findByIdAndDelete(req.params.id);
     if (!ann) return res.status(404).json({ error: 'Not found' });
