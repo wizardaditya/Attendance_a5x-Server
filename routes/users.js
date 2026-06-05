@@ -134,13 +134,14 @@ router.patch('/:id', authMiddleware, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (req.user.role === 'EMPLOYEE' && req.user._id.toString() !== req.params.id)
       return res.status(403).json({ error: 'Forbidden' });
-    const { name, phone, department, designation, isActive, role } = req.body;
+    const { name, phone, department, designation, isActive, role, email } = req.body;
     if (name)        user.name        = name;
     if (phone)       user.phone       = phone;
     if (designation) user.designation = designation;
     if (department && req.user.role !== 'EMPLOYEE') user.department = department;
     if (typeof isActive === 'boolean' && req.user.role !== 'EMPLOYEE') user.isActive = isActive;
     if (role && req.user.role === 'ADMIN') user.role = role;
+    if (email && req.user.role === 'ADMIN') user.email = email.toLowerCase();
     await user.save();
     const { password: _, ...safeUser } = user.toObject();
     res.json(safeUser);
