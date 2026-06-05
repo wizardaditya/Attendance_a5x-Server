@@ -1,5 +1,4 @@
 import nodemailer from 'nodemailer';
-import { Resend } from 'resend';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
@@ -9,76 +8,52 @@ const APP_NAME = 'WorkSyne';
 const ACCENT   = '#39ff14';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROVIDER: Resend (HTTP API — works on Render free tier, no port blocking)
-// Fallback: Nodemailer Gmail SMTP (works locally)
+// BREVO SMTP TRANSPORTER (works on Render free tier — port 587 not blocked)
 // ─────────────────────────────────────────────────────────────────────────────
-let _resend = null;
-function getResend() {
-  if (!process.env.RESEND_API_KEY) return null;
-  if (_resend) return _resend;
-  _resend = new Resend(process.env.RESEND_API_KEY);
-  return _resend;
-}
-
 let _transporter = null;
 function getTransporter() {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn('⚠️  Email skipped — SMTP_USER or SMTP_PASS missing in .env');
+    return null;
+  }
   if (_transporter) return _transporter;
   _transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    host:   process.env.SMTP_HOST || 'smtp-relay.brevo.com',
+    port:   parseInt(process.env.SMTP_PORT || '587'),
+    secure: false,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
   });
   return _transporter;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GENERIC SEND HELPER
-// Uses Resend if RESEND_API_KEY is set, else falls back to Nodemailer (local)
 // ─────────────────────────────────────────────────────────────────────────────
 async function sendMail({ to, subject, html }) {
+  const transporter = getTransporter();
+  if (!transporter) return;
+
   const recipients = Array.isArray(to) ? to : [to];
   const filtered   = recipients.filter(Boolean);
   if (filtered.length === 0) return;
 
-  const fromName = `${APP_NAME} · ${COMPANY}`;
-  const fullSubject = `[${APP_NAME}] ${subject}`;
+  const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const fromName  = `${APP_NAME} · ${COMPANY}`;
 
-  // ── Try Resend first (works on Render — HTTP API, no port blocking) ──
-  const resend = getResend();
-  if (resend) {
-    const from = process.env.EMAIL_FROM || 'onboarding@resend.dev';
-    try {
-      await resend.emails.send({
-        from:    `${fromName} <${from}>`,
-        to:      filtered,
-        subject: fullSubject,
-        html,
-      });
-      console.log(`📧 [Resend] Sent: "${subject}" → ${filtered.join(', ')}`);
-      return;
-    } catch (err) {
-      console.error('📧 [Resend] Failed:', err.message);
-    }
+  try {
+    await transporter.sendMail({
+      from:    `"${fromName}" <${fromEmail}>`,
+      to:      filtered.join(', '),
+      subject: `[${APP_NAME}] ${subject}`,
+      html,
+    });
+    console.log(`📧 [Brevo] Sent: "${subject}" → ${filtered.join(', ')}`);
+  } catch (err) {
+    console.error('📧 [Brevo] Failed:', err.message);
   }
-
-  // ── Fallback: Nodemailer Gmail SMTP (local dev only) ──
-  const transporter = getTransporter();
-  if (transporter) {
-    try {
-      await transporter.sendMail({
-        from:    `"${fromName}" <${process.env.SMTP_USER}>`,
-        to:      filtered.join(', '),
-        subject: fullSubject,
-        html,
-      });
-      console.log(`📧 [Gmail] Sent: "${subject}" → ${filtered.join(', ')}`);
-      return;
-    } catch (err) {
-      console.error('📧 [Gmail] Failed:', err.message);
-    }
-  }
-
-  console.warn('⚠️  Email skipped — no working provider configured');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
