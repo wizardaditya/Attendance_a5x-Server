@@ -1,4 +1,4 @@
-import * as Brevo from '@getbrevo/brevo';
+import axios from 'axios';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
@@ -10,26 +10,15 @@ const ACCENT   = '#39ff14';
 // ─────────────────────────────────────────────────────────────────────────────
 // BREVO HTTP API (works on Render — uses port 443, no SMTP port needed)
 // ─────────────────────────────────────────────────────────────────────────────
-let _brevoClient = null;
-function getBrevoClient() {
+// ─────────────────────────────────────────────────────────────────────────────
+// GENERIC SEND HELPER — Brevo REST API (port 443, works on Render free tier)
+// ─────────────────────────────────────────────────────────────────────────────
+async function sendMail({ to, subject, html }) {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) {
     console.warn('⚠️  Email skipped — BREVO_API_KEY missing in .env');
-    return null;
+    return;
   }
-  if (_brevoClient) return _brevoClient;
-  const apiInstance = new Brevo.TransactionalEmailsApi();
-  apiInstance.authentications['api-key'].apiKey = apiKey;
-  _brevoClient = apiInstance;
-  return _brevoClient;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GENERIC SEND HELPER
-// ─────────────────────────────────────────────────────────────────────────────
-async function sendMail({ to, subject, html }) {
-  const client = getBrevoClient();
-  if (!client) return;
 
   const recipients = Array.isArray(to) ? to : [to];
   const filtered   = recipients.filter(Boolean);
@@ -38,17 +27,25 @@ async function sendMail({ to, subject, html }) {
   const fromEmail = process.env.SMTP_FROM || 'office.a5xindustries@gmail.com';
   const fromName  = `${APP_NAME} · ${COMPANY}`;
 
-  const sendSmtpEmail = new Brevo.SendSmtpEmail();
-  sendSmtpEmail.subject = `[${APP_NAME}] ${subject}`;
-  sendSmtpEmail.htmlContent = html;
-  sendSmtpEmail.sender = { name: fromName, email: fromEmail };
-  sendSmtpEmail.to = filtered.map(email => ({ email }));
-
   try {
-    await client.sendTransacEmail(sendSmtpEmail);
+    await axios.post(
+      'https://api.brevo.com/v3/smtp/email',
+      {
+        sender:      { name: fromName, email: fromEmail },
+        to:          filtered.map(email => ({ email })),
+        subject:     `[${APP_NAME}] ${subject}`,
+        htmlContent: html,
+      },
+      {
+        headers: {
+          'api-key':     apiKey,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
     console.log(`📧 [Brevo API] Sent: "${subject}" → ${filtered.join(', ')}`);
   } catch (err) {
-    console.error('📧 [Brevo API] Failed:', err?.response?.text || err.message);
+    console.error('📧 [Brevo API] Failed:', err?.response?.data || err.message);
   }
 }
 
