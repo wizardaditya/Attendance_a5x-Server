@@ -27,6 +27,8 @@ export const connectDB = async () => {
 async function seedAdmin() {
   try {
     const { default: User } = await import('./models/User.js');
+
+    // Seed default admin
     const exists = await User.findOne({ email: 'admin@a5xindustries.com' });
     if (!exists) {
       await User.create({
@@ -43,6 +45,25 @@ async function seedAdmin() {
       console.log('✅ Admin account seeded');
     } else {
       console.log('ℹ️  Admin already exists');
+    }
+
+    // Seed secondary admin
+    const exists2 = await User.findOne({ email: 'admin@a5x.com' });
+    if (!exists2) {
+      await User.create({
+        name:        'A5X Admin',
+        email:       'admin@a5x.com',
+        phone:       '9999999998',
+        password:    await bcrypt.hash('Admin1234', 10),
+        role:        'ADMIN',
+        department:  'Management',
+        designation: 'System Administrator',
+        employeeId:  'A5X-002',
+        isActive:    true,
+      });
+      console.log('✅ Secondary admin seeded');
+    } else {
+      console.log('ℹ️  Secondary admin already exists');
     }
   } catch (e) {
     console.error('❌ Seed error:', e.message);
