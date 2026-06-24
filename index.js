@@ -118,14 +118,6 @@ httpServer.listen(PORT, () => {
   // Start QR auto-scheduler
   startQRScheduler(io);
 
-  // Keep-alive ping every 14 minutes to prevent Render free tier sleep
-  const SELF_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
-  setInterval(async () => {
-    try {
-      const res = await fetch(`${SELF_URL}/api/health`);
-      console.log(`💓 Keep-alive ping: ${res.status}`);
-    } catch (e) {
-      console.warn('💓 Keep-alive ping failed:', e.message);
-    }
-  }, 14 * 60 * 1000); // every 14 minutes
+  // Keep-alive ping disabled — on free tier this burns hours unnecessarily
+  // Use UptimeRobot (free) externally if needed: https://uptimerobot.com
 });
