@@ -42,6 +42,8 @@ const isAllowedOrigin = (origin) => {
   if (/^https:\/\/attendance-a5x-client.*\.vercel\.app$/.test(origin)) return true;
   // Allow wizardadityas-projects.vercel.app preview URLs
   if (/^https:\/\/attendance-a5x-client.*wizardadityas.*\.vercel\.app$/.test(origin)) return true;
+  // Allow all vercel.app preview URLs for wizardadityas
+  if (/^https:\/\/.*wizardadityas.*\.vercel\.app$/.test(origin)) return true;
   return false;
 };
 
