@@ -173,17 +173,18 @@ router.patch('/:id', authMiddleware, adminOnly, async (req, res) => {
     if (!record) return res.status(404).json({ error: 'Record not found' });
     const { checkIn, checkOut, status } = req.body;
 
-    // checkIn/checkOut come as "HH:MM" time string from frontend - combine with record date
+    // checkIn/checkOut come as "HH:MM" time string (IST) from frontend - combine with record date in IST
     if (checkIn) {
       const [h, m] = checkIn.split(':');
-      const d = new Date(`${record.date}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00`);
-      record.checkIn = d;
+      // Parse as IST: subtract 5:30 offset to get UTC
+      const istDate = new Date(`${record.date}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00+05:30`);
+      record.checkIn = istDate;
     }
     if (checkOut) {
       const [h, m] = checkOut.split(':');
-      const d = new Date(`${record.date}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00`);
-      record.checkOut = d;
-      if (record.checkIn) record.duration = Math.round((d - new Date(record.checkIn)) / 60000);
+      const istDate = new Date(`${record.date}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00+05:30`);
+      record.checkOut = istDate;
+      if (record.checkIn) record.duration = Math.round((istDate - new Date(record.checkIn)) / 60000);
     }
     if (status) record.status = status;
     await record.save();
